@@ -1,0 +1,57 @@
+services:
+
+  # ── 统一推理网关（唯一对外入口）─────────────────────────────────────────────
+  gateway:
+    build: ./gateway
+    image: toolkit-gateway:latest
+    container_name: toolkit-gateway
+    ports:
+      - "9000:9000"                  # 只有这一个端口对外暴露
+    environment:
+      - TOTAL_GPU_MB=40000           # ← 改成你的 GPU 总显存（MB）
+    volumes:
+      - ./gateway/tools:/app/tools:ro  # 新增工具只需在宿主机加 config.yaml，无需重建
+    networks:
+      - toolnet
+    depends_on:
+      - mavl
+    restart: unless-stopped
+
+  # ── MAVL（B 类，独立环境）────────────────────────────────────────────────────
+  mavl:
+    build:
+      context: ./MAVL
+      dockerfile: serving/Dockerfile.serving
+    image: mavl-serving:latest
+    container_name: mavl-serving
+    expose:
+      - "8000"                       # 仅内网可达，外部无法直接访问
+    volumes:
+      - /data/wxb/toolkit/MAVL:/workspace/MAVL
+      - /home/tx/.cache/huggingface:/root/.cache/huggingface
+      - /home/tx/.cache/torch:/root/.cache/torch
+    env_file:
+      - ./MAVL/serving/.env
+    shm_size: "4g"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - toolnet
+    restart: unless-stopped
+
+  # ── 新增模型示例（复制此块，改 service 名和端口即可）─────────────────────────
+  # model-b:
+  #   build: ./model-b
+  #   expose: ["8000"]
+  #   volumes: [...]
+  #   networks: [toolnet]
+  #   restart: unless-stopped
+
+networks:
+  toolnet:
+    driver: bridge

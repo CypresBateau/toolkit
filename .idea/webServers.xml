@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="888508a6-f918-4a5e-9ff3-8c1fb33dcc36" name="tx">
+        <fileTransfer accessType="SFTP" host="3.tcp.cpolar.top" port="11382" sshConfigId="8838ccf6-b273-4246-ab88-05aa22bcb2e0" sshConfig="tx@3.tcp.cpolar.top:11382 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
