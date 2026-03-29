@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from .registry import ToolRegistry
@@ -100,5 +100,32 @@ async def predict(
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except httpx.TimeoutException:
         raise HTTPException(504, f"Inference timeout for '{tool_name}' (>{timeout}s)")
+    except Exception as e:
+        raise HTTPException(502, f"Error calling '{tool_name}': {e}")
+
+
+# ── JSON 工具调用接口（计算器 / 单位换算）─────────────────────────────────────
+@app.post("/tools/{tool_name}/call", tags=["call"])
+async def call_tool(tool_name: str, request: Request):
+    tool = registry.get(tool_name)
+    if not tool:
+        available = list(registry.all().keys())
+        raise HTTPException(404, f"Tool '{tool_name}' not found. Available: {available}")
+
+    try:
+        await scheduler.ensure_loaded(tool)
+    except Exception as e:
+        raise HTTPException(503, f"Failed to load tool '{tool_name}': {e}")
+
+    body = await request.json()
+    endpoint = tool["endpoint"]
+    timeout = tool.get("call_timeout_s", 30)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(f"{endpoint}/api/v1/call", json=body)
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        raise HTTPException(504, f"Call timeout for '{tool_name}' (>{timeout}s)")
     except Exception as e:
         raise HTTPException(502, f"Error calling '{tool_name}': {e}")

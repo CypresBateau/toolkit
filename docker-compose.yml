@@ -15,6 +15,8 @@ services:
       - toolnet
     depends_on:
       - mavl
+      - tool-scale
+      - tool-unit
     restart: unless-stopped
 
   # ── MAVL（B 类，独立环境）────────────────────────────────────────────────────
@@ -44,13 +46,37 @@ services:
       - toolnet
     restart: unless-stopped
 
-  # ── 新增模型示例（复制此块，改 service 名和端口即可）─────────────────────────
-  # model-b:
-  #   build: ./model-b
-  #   expose: ["8000"]
-  #   volumes: [...]
-  #   networks: [toolnet]
-  #   restart: unless-stopped
+  # ── 医疗评分计算器（44 个，纯 CPU）──────────────────────────────────────────
+  tool-scale:
+    build: ./med-calc
+    image: med-calc:latest
+    container_name: tool-scale
+    expose:
+      - "8000"
+    environment:
+      - TOOL_JSON_PATH=/data/tool_scale.json
+      - TOOL_CATEGORY=scale
+    volumes:
+      - /data/wxb/toolkit/tool_scale.json:/data/tool_scale.json:ro
+    networks:
+      - toolnet
+    restart: unless-stopped
+
+  # ── 医学单位换算工具（237 个，纯 CPU）────────────────────────────────────────
+  tool-unit:
+    build: ./med-calc
+    image: med-calc:latest
+    container_name: tool-unit
+    expose:
+      - "8000"
+    environment:
+      - TOOL_JSON_PATH=/data/tool_unit.json
+      - TOOL_CATEGORY=unit
+    volumes:
+      - /data/wxb/toolkit/tool_unit.json:/data/tool_unit.json:ro
+    networks:
+      - toolnet
+    restart: unless-stopped
 
 networks:
   toolnet:
