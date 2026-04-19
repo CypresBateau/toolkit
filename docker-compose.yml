@@ -17,6 +17,7 @@ services:
       - mavl
       - tool-scale
       - tool-unit
+      - tool-mdcalc
     restart: unless-stopped
 
   # ── MAVL（B 类，独立环境）────────────────────────────────────────────────────
@@ -74,6 +75,21 @@ services:
       - TOOL_CATEGORY=unit
     volumes:
       - /data/wxb/toolkit/tool_unit.json:/data/tool_unit.json:ro
+    networks:
+      - toolnet
+    restart: unless-stopped
+
+  # ── MDCalc 医疗计算器（871 个，纯 CPU）────────────────────────────────────────
+  tool-mdcalc:
+    build: ./mdcalc
+    image: mdcalc:latest
+    container_name: tool-mdcalc
+    expose:
+      - "8000"
+    environment:
+      - TOOL_JSON_PATH=/data/tools_metadata.json
+    volumes:
+      - /data/wxb/toolkit/tools_metadata.json:/data/tools_metadata.json:ro
     networks:
       - toolnet
     restart: unless-stopped

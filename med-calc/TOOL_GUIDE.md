@@ -150,7 +150,7 @@ tool-unit:
 cd /data/wxb/toolkit
 
 # 首次构建
-docker compose build med-calc   # 只需构建一次，两个服务共用
+docker compose build tool_scale（tool_unit也可以，他们对应同一个build的镜像叫做med-calc）   # 只需构建一次，两个服务共用
 
 # 启动所有服务
 docker compose up -d
