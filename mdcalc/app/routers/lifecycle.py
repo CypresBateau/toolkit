@@ -10,7 +10,7 @@ from fastapi import APIRouter
 
 from ..state import app_state
 
-router = APIRouter(prefix="/api/v1", tags=["lifecycle"])
+router = APIRouter(tags=["lifecycle"])
 
 
 @router.post("/load")
