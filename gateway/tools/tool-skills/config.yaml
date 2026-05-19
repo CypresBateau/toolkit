@@ -1,0 +1,9 @@
+name: tool-skills
+type: remote
+endpoint: http://tool-skills:8000
+gpu_memory_mb: 0
+load_time_s: 10
+call_timeout_s: 15
+description: "通用 Skills 服务"
+input: json
+output: dict
