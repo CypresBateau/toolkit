@@ -22,10 +22,6 @@ biopython
 # 医学影像
 pydicom
 
-# 病理图像
-histolab
-pathml
-
 # 时序基础模型
 timesfm
 
