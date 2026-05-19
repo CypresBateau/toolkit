@@ -1,3 +1,45 @@
 fastapi>=0.95.0
 uvicorn[standard]>=0.23.0
 pydantic>=1.10.0,<2.0.0
+
+# 数值/统计
+numpy
+pandas
+scipy
+statsmodels
+scikit-learn
+scikit-survival
+
+# 时序分析
+aeon
+
+# 生理信号
+neurokit2
+
+# 生物信息
+biopython
+
+# 医学影像
+pydicom
+
+# 病理图像
+histolab
+pathml
+
+# 时序基础模型
+timesfm
+
+# 离散事件仿真
+simpy
+
+# FHIR
+fhirpy
+
+# Google Data Commons
+datacommons-client
+
+# HTTP
+requests
+
+# PyTorch（timesfm/pathml 依赖）
+torch
