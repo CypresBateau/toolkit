@@ -15,9 +15,11 @@ services:
       - toolnet
     depends_on:
       - mavl
+      - mvfa-ad
       - tool-scale
       - tool-unit
       - tool-mdcalc
+      - tool-skills
     restart: unless-stopped
 
   # ── MAVL（B 类，独立环境）────────────────────────────────────────────────────
@@ -46,6 +48,34 @@ services:
     networks:
       - toolnet
     restart: unless-stopped
+
+
+  # —— MVFA-AD ———————————————————————————————————————————————————————————————
+  mvfa-ad:
+    build:
+      context: ./MVFA-AD
+      dockerfile: serving/Dockerfile.serving
+    image: mvfa-ad-serving:latest
+    container_name: mvfa-ad-serving
+    expose:
+      - "8000"
+    volumes:
+      - /data/wxb/toolkit/MVFA-AD:/workspace/MVFA-AD
+      - /home/tx/.cache/torch:/root/.cache/torch
+    env_file:
+      - ./MVFA-AD/serving/.env
+    shm_size: "4g"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - toolnet
+    restart: unless-stopped
+
 
   # ── 医疗评分计算器（44 个，纯 CPU）──────────────────────────────────────────
   tool-scale:
@@ -90,6 +120,46 @@ services:
       - TOOL_JSON_PATH=/data/tools_metadata.json
     volumes:
       - /data/wxb/toolkit/tools_metadata.json:/data/tools_metadata.json:ro
+    networks:
+      - toolnet
+    restart: unless-stopped
+
+  # ── Skills 服务（纯 CPU）────────────────────────────────────────────────────
+  tool-skills:
+    build: ./skills
+    image: tool-skills:latest
+    container_name: tool-skills
+    expose:
+      - "8000"
+    environment:
+      - TOOL_JSON_PATH=/data/skills_metadata.json
+    volumes:
+      - /data/wxb/toolkit/skills_metadata.json:/data/skills_metadata.json:ro
+    networks:
+      - toolnet
+    restart: unless-stopped
+
+  # ── MToolHub 语义路由层（自然语言 → 工具/模型调度）────────────────────────────
+  mtoolhub:
+    build:
+      context: ./MToolHub/backend
+      dockerfile: Dockerfile
+    image: mtoolhub:latest
+    container_name: mtoolhub
+    ports:
+      - "8081:8080"                  # 对外暴露对话接口
+    environment:
+      - GATEWAY_BASE_URL=http://toolkit-gateway:9000  # 指向已有 gateway
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - CLAUDE_MODEL=claude-sonnet-4-20250514
+      - EMBEDDING_MODEL=/app/models/S-PubMedBert-MS-MARCO
+      - EMBEDDING_DEVICE=cpu
+      - DIRECT_CALL_THRESHOLD=0.85
+      - CLAUDE_SELECT_THRESHOLD=0.60
+    volumes:
+      - ./MToolHub/backend/data:/app/data
+      - ./skills:/app/skills:ro      # 技能目录（需确认路径）
+      - /home/tx/S-PubMedBert-MS-MARCO:/app/models/S-PubMedBert-MS-MARCO:ro
     networks:
       - toolnet
     restart: unless-stopped

@@ -20,3 +20,32 @@ my_test/images/
 
 # 系统
 .DS_Store
+
+# 模型权重文件
+MVFA-AD/CLIP/ckpt/
+MVFA-AD/ckpt/
+
+# 备份
+*.bak
+*.bak/
+MToolHub_2026_5_24.bak/
+
+# 无关项目
+peritumoral-radiomics/
+
+# 模型权重文件
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+MVFA-AD/CLIP/ckpt/
+MVFA-AD/ckpt/
+
+# 备份
+*.bak
+*.bak/
+MToolHub_2026_5_24.bak/
+
+# 无关项目
+peritumoral-radiomics/

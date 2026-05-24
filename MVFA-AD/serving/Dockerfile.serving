@@ -1,0 +1,43 @@
+FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-devel
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DEFAULT_TIMEOUT=120
+
+# 修复 apt 源访问慢 / 超时问题：
+# 1. 删除 NVIDIA CUDA apt 源，避免 apt-get update 卡在 developer.download.nvidia.com
+# 2. 将 Ubuntu 官方源替换为清华源
+# 3. 只安装 serving 必需的系统库
+RUN rm -f /etc/apt/sources.list.d/cuda.list \
+          /etc/apt/sources.list.d/nvidia-ml.list \
+          /etc/apt/sources.list.d/cuda*.list \
+          /etc/apt/sources.list.d/nvidia*.list || true && \
+    sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list && \
+    apt-get clean && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 FastAPI serving 依赖
+COPY serving/requirements-serving.txt /tmp/requirements-serving.txt
+
+RUN pip install --no-cache-dir -r /tmp/requirements-serving.txt \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+WORKDIR /workspace/MVFA-AD
+
+EXPOSE 8000
+
+# 健康检查，gateway / docker 可以用它判断服务是否存活
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# 单 worker，避免多进程重复加载 CLIP 和 MVFA-AD 权重导致显存翻倍
+CMD ["uvicorn", "serving.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

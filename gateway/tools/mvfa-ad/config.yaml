@@ -1,0 +1,9 @@
+name: mvfa-ad
+type: remote
+endpoint: http://mvfa-ad:8000
+gpu_memory_mb: 12000
+load_time_s: 120
+predict_timeout_s: 120
+description: "MVFA-AD medical anomaly detection. Input one medical image and optional anatomical object, output anomaly score and heatmap."
+input: image
+output: anomaly_score_heatmap
