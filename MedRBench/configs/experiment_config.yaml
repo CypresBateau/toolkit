@@ -1,0 +1,128 @@
+# MedRBench + MToolHub 实验配置文件
+#
+# 使用方式：
+#   python src/Inference/one_turn_claude.py --config configs/experiment_config.yaml --mode baseline
+#   python src/Inference/one_turn_claude.py --config configs/experiment_config.yaml --mode experimental
+#   python src/Inference/one_turn_claude.py --config configs/experiment_config.yaml --mode ablation.search_only
+#
+# ============================================================================
+# LLM Provider 说明
+# ============================================================================
+#
+# provider: anthropic
+#   - 直接调用 Anthropic API
+#   - 需要设置环境变量: ANTHROPIC_API_KEY
+#   - model 格式: claude-sonnet-4-20250514
+#
+# provider: openrouter
+#   - 通过 OpenRouter 调用（兼容 OpenAI SDK）
+#   - 需要设置环境变量: OPENROUTER_API_KEY
+#   - model 格式: anthropic/claude-sonnet-4-5
+#   - OpenRouter 模型列表: https://openrouter.ai/models
+#
+# provider: openai_compatible
+#   - 任意兼容 OpenAI 格式的接口（如本地 vLLM、Together AI 等）
+#   - 需要设置 api_base_url 和环境变量 OPENAI_API_KEY（或自定义 api_key_env）
+#   - model 格式取决于具体服务
+
+# ============================================================================
+# Baseline 配置（LLM 裸跑，不提供任何工具）
+# ============================================================================
+baseline:
+  mode: baseline
+  llm:
+    provider: openrouter                        # 改为 openrouter / anthropic
+    model: anthropic/claude-sonnet-4-5          # OpenRouter 格式的模型名
+    temperature: 0.0
+    max_tokens: 4096
+    api_base_url: https://openrouter.ai/api/v1  # OpenRouter 接口地址
+    api_key_env: OPENROUTER_API_KEY             # 读取 API Key 的环境变量名
+  mtoolhub:
+    enabled: false
+
+# ============================================================================
+# Experimental 配置（LLM + MToolHub 工具库）
+# ============================================================================
+experimental:
+  mode: experimental
+  llm:
+    provider: openrouter
+    model: anthropic/claude-sonnet-4-5          # 与 baseline 相同
+    temperature: 0.0
+    max_tokens: 4096
+    api_base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+  mtoolhub:
+    enabled: true
+    url: http://localhost:8080
+    search_top_k: 3
+    enable_execution: true
+    timeout: 30
+
+# ============================================================================
+# 消融实验配置
+# ============================================================================
+ablation:
+  # 消融实验 1：仅搜索不执行（测试搜索质量的影响）
+  search_only:
+    mode: experimental
+    llm:
+      provider: openrouter
+      model: anthropic/claude-sonnet-4-5
+      temperature: 0.0
+      max_tokens: 4096
+      api_base_url: https://openrouter.ai/api/v1
+      api_key_env: OPENROUTER_API_KEY
+    mtoolhub:
+      enabled: true
+      url: http://localhost:8080
+      search_top_k: 3
+      enable_execution: false  # 关键：只搜索不执行
+
+  # 消融实验 2：仅返回 top-1 工具（测试工具数量的影响）
+  top1_only:
+    mode: experimental
+    llm:
+      provider: openrouter
+      model: anthropic/claude-sonnet-4-5
+      temperature: 0.0
+      max_tokens: 4096
+      api_base_url: https://openrouter.ai/api/v1
+      api_key_env: OPENROUTER_API_KEY
+    mtoolhub:
+      enabled: true
+      url: http://localhost:8080
+      search_top_k: 1  # 关键：只返回 top-1
+      enable_execution: true
+
+  # 消融实验 3：使用更强的 LLM（测试 LLM 能力的影响）
+  different_llm:
+    mode: experimental
+    llm:
+      provider: openrouter
+      model: anthropic/claude-opus-4-5          # 关键：更强模型
+      temperature: 0.0
+      max_tokens: 4096
+      api_base_url: https://openrouter.ai/api/v1
+      api_key_env: OPENROUTER_API_KEY
+    mtoolhub:
+      enabled: true
+      url: http://localhost:8080
+      search_top_k: 3
+      enable_execution: true
+
+  # 消融实验 4：返回 top-5 工具（测试更多候选的影响）
+  top5:
+    mode: experimental
+    llm:
+      provider: openrouter
+      model: anthropic/claude-sonnet-4-5
+      temperature: 0.0
+      max_tokens: 4096
+      api_base_url: https://openrouter.ai/api/v1
+      api_key_env: OPENROUTER_API_KEY
+    mtoolhub:
+      enabled: true
+      url: http://localhost:8080
+      search_top_k: 5  # 关键：返回 top-5
+      enable_execution: true
