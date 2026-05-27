@@ -27,7 +27,7 @@ experimental:
     api_key_env: OPENROUTER_API_KEY
   mtoolhub:
     enabled: true
-    url: http://localhost:8080
+    url: http://localhost:8081
     search_top_k: 3
     enable_execution: true
     timeout: 30

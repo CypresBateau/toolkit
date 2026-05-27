@@ -100,16 +100,22 @@ class ToolkitAdapter:
             results = data.get("results", [])
 
             # 转换为 Claude function calling 格式
+            # 搜索结果结构：{"item": {...资源元数据...}, "score": float, "category": str}
             tools = []
             for res in results:
-                # 将 resource_id 中的冒号替换为下划线（Claude 工具名不支持冒号）
-                tool_name = res["id"].replace(":", "_").replace("-", "_")
+                item = res.get("item", res)  # 兼容直接返回元数据的情况
+                resource_id = item.get("id", "")
+                if not resource_id:
+                    continue
+
+                # 将 resource_id 中的冒号替换为下划线（函数名不支持冒号）
+                tool_name = resource_id.replace(":", "_").replace("-", "_")
 
                 # 构建工具定义
                 tool = {
                     "name": tool_name,
-                    "description": res.get("description", ""),
-                    "input_schema": res.get("input_schema") or {
+                    "description": item.get("description", ""),
+                    "input_schema": item.get("input_schema") or {
                         "type": "object",
                         "properties": {},
                         "required": []
@@ -117,7 +123,7 @@ class ToolkitAdapter:
                 }
 
                 # 保存原始 resource_id 用于后续执行
-                tool["_resource_id"] = res["id"]
+                tool["_resource_id"] = resource_id
 
                 tools.append(tool)
 
