@@ -1,0 +1,33 @@
+# DeepSeek-R1 + MToolHub 实验配置
+#
+# 实验说明：
+#   主模型：DeepSeek-R1（与 MedRBench 论文一致）
+#   患者代理：GPT-4o（与 MedRBench 论文一致）
+#   工具库：MToolHub（唯一新增变量）
+#
+# 运行方式：
+#   export OPENROUTER_API_KEY=sk-or-v1-xxxxx
+#   export PRIMARY_MODEL=deepseek/deepseek-r1
+#   export PATIENT_AGENT_MODEL=openai/gpt-4o-2024-11-20
+#
+#   python src/Inference/one_turn_toolkit.py \
+#     --mode experimental \
+#     --config configs/deepseek_r1_experimental.yaml \
+#     --model-name deepseek-r1 \
+#     --limit 5
+
+experimental:
+  mode: experimental
+  llm:
+    provider: openrouter
+    model: deepseek/deepseek-r1
+    temperature: 0.6
+    max_tokens: 10000
+    api_base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+  mtoolhub:
+    enabled: true
+    url: http://localhost:8080
+    search_top_k: 3
+    enable_execution: true
+    timeout: 30

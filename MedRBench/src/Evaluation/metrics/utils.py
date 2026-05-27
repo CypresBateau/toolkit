@@ -13,7 +13,7 @@ def workflow(model_name, instruction, input_text):
     selected_key = random.choice(api_keys).strip()
     
     client = OpenAI(
-        base_url="https://api.gpts.vin/v1",
+        base_url="https://openrouter.ai/api/v1",
         api_key=selected_key
     )
 
@@ -32,7 +32,7 @@ def workflow_multi_turn(model_name, input_text, history_messages):
     selected_key = random.choice(api_keys).strip()
     
     client = OpenAI(
-        base_url="https://api.gpts.vin/v1",
+        base_url="https://openrouter.ai/api/v1",
         api_key=selected_key
     )
     history_messages.append({"role": "user", "content": input_text})

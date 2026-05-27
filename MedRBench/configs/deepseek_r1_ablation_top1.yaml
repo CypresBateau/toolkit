@@ -1,0 +1,27 @@
+# DeepSeek-R1 消融实验：仅 top-1 工具
+#
+# 实验说明：
+#   每次只提供最相关的 1 个工具（而非 top-3）
+#   用于测试：工具数量对性能的影响
+#
+# 运行方式：
+#   python src/Inference/one_turn_toolkit.py \
+#     --mode experimental \
+#     --config configs/deepseek_r1_ablation_top1.yaml \
+#     --model-name deepseek-r1-top1
+
+experimental:
+  mode: experimental
+  llm:
+    provider: openrouter
+    model: deepseek/deepseek-r1
+    temperature: 0.6
+    max_tokens: 10000
+    api_base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+  mtoolhub:
+    enabled: true
+    url: http://localhost:8080
+    search_top_k: 1
+    enable_execution: true
+    timeout: 30

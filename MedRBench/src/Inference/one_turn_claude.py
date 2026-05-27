@@ -36,20 +36,103 @@ from src.Adapters.toolkit_adapter import ToolkitAdapter, load_config, LLMConfig
 # ======================
 
 DATA_PATH = 'data/MedRBench/diagnosis_957_cases_with_rare_disease_491.json'
-SYSTEM_PROMPT = """You are a professional doctor with expertise in clinical diagnosis.
+SYSTEM_PROMPT = "You are a professional doctor"
 
-Your task is to analyze the patient's information and provide a diagnosis.
+# 提示词模板路径
+ASK_TEMPLATE_PATH = 'src/Inference/instructions/1turn_prompt_examination_recommend.txt'
+FINAL_TEMPLATE_PATH = 'src/Inference/instructions/1turn_prompt_make_diagnosis.txt'
 
-Please follow these steps:
-1. Review the patient's demographics, symptoms, and test results
-2. If relevant clinical tools are available, use them to calculate scores or perform assessments
-3. Based on all available information, provide your diagnosis
 
-Format your response as:
-### Diagnosis: [Your diagnosis]
-### Reasoning: [Your clinical reasoning]
-### Confidence: [High/Medium/Low]
-"""
+# ======================
+# 辅助函数
+# ======================
+
+def load_instruction(txt_path):
+    """从文件加载提示词模板"""
+    try:
+        with open(txt_path, 'r', encoding='utf-8') as fp:
+            return fp.read()
+    except Exception as e:
+        print(f"[ERR] 加载提示词失败 {txt_path}: {e}")
+        return None
+
+
+def parse_response_sections(response_text: str) -> Dict[str, str]:
+    """解析 LLM 响应，提取 Chain of Thought 和 Conclusion"""
+    reasoning = ""
+    answer = ""
+
+    # 提取 Chain of Thought
+    if "### Chain of Thought:" in response_text:
+        parts = response_text.split("### Chain of Thought:")
+        if len(parts) > 1:
+            cot_part = parts[1].split("###")[0].strip()
+            reasoning = cot_part
+
+    # 提取 Conclusion
+    if "### Conclusion:" in response_text:
+        parts = response_text.split("### Conclusion:")
+        if len(parts) > 1:
+            conclusion_part = parts[1].split("###")[0].strip()
+            answer = conclusion_part
+
+    return {"reasoning": reasoning, "answer": response_text}  # answer 保留完整响应
+
+
+def parse_assessment_output(answer_text: str):
+    """从阶段1响应中提取结论和额外信息请求"""
+    import re
+    pattern = r'### Conclusion:\s*(.*?)\s*### Additional Information Required:\s*(.*)'
+    matches = re.search(pattern, answer_text, re.DOTALL)
+    if matches:
+        preliminary_conclusion = matches.group(1).strip()
+        additional_info_required = matches.group(2).strip()
+        return preliminary_conclusion, additional_info_required
+    else:
+        # 如果解析失败，返回默认值
+        return answer_text, "Not required."
+
+
+def extract_case_summary_without_tests(case: Dict[str, Any]) -> str:
+    """提取病例摘要，排除辅助检查结果"""
+    gc = case.get("generate_case", {})
+    case_summary = gc.get("case_summary", "")
+
+    if not case_summary:
+        return case.get("raw_case", "")
+
+    # 简化实现：移除包含 "Laboratory" 或 "Imaging" 的段落
+    lines = case_summary.split('\n')
+    filtered_lines = []
+    skip = False
+    for line in lines:
+        if any(keyword in line for keyword in ['Laboratory', 'Imaging', 'Test Results', 'Examination Results']):
+            skip = True
+        if not skip:
+            filtered_lines.append(line)
+
+    return '\n'.join(filtered_lines).strip()
+
+
+def extract_ancillary_tests(case: Dict[str, Any]) -> str:
+    """提取辅助检查结果"""
+    gc = case.get("generate_case", {})
+    case_summary = gc.get("case_summary", "")
+
+    if not case_summary:
+        return "No additional test results available."
+
+    # 提取包含 "Laboratory" 或 "Imaging" 的段落
+    lines = case_summary.split('\n')
+    test_lines = []
+    capture = False
+    for line in lines:
+        if any(keyword in line for keyword in ['Laboratory', 'Imaging', 'Test Results', 'Examination Results']):
+            capture = True
+        if capture:
+            test_lines.append(line)
+
+    return '\n'.join(test_lines).strip() if test_lines else "No additional test results available."
 
 
 # ======================
@@ -250,33 +333,29 @@ def load_cases(data_path: str, limit: int = None) -> Dict[str, Any]:
 
 def format_case_as_prompt(case: Dict[str, Any]) -> str:
     """将病例格式化为 prompt"""
-    prompt_parts = []
+    gc = case.get("generate_case", {})
 
-    # 患者基本信息
-    if 'patient_info' in case:
-        prompt_parts.append("## Patient Information")
-        for key, value in case['patient_info'].items():
-            prompt_parts.append(f"- {key}: {value}")
+    # 优先用 generate_case.case_summary（结构化摘要）
+    case_summary = gc.get("case_summary", "")
+    if case_summary:
+        return (
+            "## Patient Case\n"
+            f"{case_summary}\n\n"
+            "## Task\n"
+            "Based on the above information, please provide your diagnosis."
+        )
 
-    # 症状
-    if 'symptoms' in case:
-        prompt_parts.append("\n## Symptoms")
-        if isinstance(case['symptoms'], list):
-            for symptom in case['symptoms']:
-                prompt_parts.append(f"- {symptom}")
-        else:
-            prompt_parts.append(str(case['symptoms']))
+    # 回退到 raw_case（原始病例文本）
+    raw_case = case.get("raw_case", "")
+    if raw_case:
+        return (
+            "## Patient Case\n"
+            f"{raw_case}\n\n"
+            "## Task\n"
+            "Based on the above information, please provide your diagnosis."
+        )
 
-    # 检查结果
-    if 'test_results' in case:
-        prompt_parts.append("\n## Test Results")
-        for key, value in case['test_results'].items():
-            prompt_parts.append(f"- {key}: {value}")
-
-    prompt_parts.append("\n## Task")
-    prompt_parts.append("Based on the above information, please provide your diagnosis.")
-
-    return "\n".join(prompt_parts)
+    return "## Task\nPlease provide your diagnosis based on the available information."
 
 
 def extract_diagnosis(response_text: str) -> str:
@@ -302,121 +381,168 @@ async def process_case_with_tools(
     config: Any
 ) -> Dict[str, Any]:
     """
-    处理单个病例（支持工具调用，兼容 anthropic / openrouter）
+    处理单个病例（两阶段推理，输出格式与原始 MedRBench 一致）
 
     Returns:
         {
-            "case_id": str,
-            "ground_truth": str,
-            "prediction": str,
-            "correct": bool,
-            "tools_used": List[dict],
-            "reasoning": str,
+            "output_messages": List[Dict],  # 消息历史
+            "tools_used": List[dict],       # 工具使用记录
             "response_time": float,
             "tokens_used": int
         }
     """
     import time
-
-    provider = config.llm.provider
     start_time = time.time()
 
-    # 格式化病例为 prompt
-    query = format_case_as_prompt(case)
+    provider = config.llm.provider
 
-    # 获取相关工具（baseline 模式返回空列表）
-    tools = await adapter.get_tools_for_query(query)
+    # 加载提示词模板
+    ask_template = load_instruction(ASK_TEMPLATE_PATH)
+    final_template = load_instruction(FINAL_TEMPLATE_PATH)
 
-    # 构建消息（不含 system，system 由 call_llm 处理）
-    messages = [{"role": "user", "content": query}]
+    if not ask_template or not final_template:
+        raise ValueError("无法加载提示词模板")
 
+    # 提取病例摘要（不含辅助检查）
+    case_summary_without_tests = extract_case_summary_without_tests(case)
+
+    # 提取辅助检查结果
+    ancillary_tests = extract_ancillary_tests(case)
+
+    # 初始化消息历史
+    output_messages = []
     tools_used = []
     total_input_tokens = 0
     total_output_tokens = 0
-    resp = None
-    max_iterations = 5  # 最多 5 轮工具调用
 
-    for _ in range(max_iterations):
-        resp = call_llm(client, config.llm, messages, tools, SYSTEM_PROMPT)
-        total_input_tokens += resp["input_tokens"]
-        total_output_tokens += resp["output_tokens"]
+    # ===== 阶段 1：初步评估 =====
+    stage1_prompt = ask_template.format(case=case_summary_without_tests)
 
-        if resp["stop_reason"] == "tool_use":
-            # 执行所有工具调用
-            tc_results = []
-            for tc in resp["tool_calls"]:
-                tool_name = tc["name"]
+    # 添加 system 消息到输出历史
+    output_messages.append({
+        "role": "system",
+        "content": SYSTEM_PROMPT
+    })
 
-                # 从 tools 列表中找到对应的原始 resource_id
-                resource_id = None
-                for t in tools:
-                    if t["name"] == tool_name:
-                        resource_id = t.get("_resource_id", tool_name.replace("_", ":", 1))
-                        break
-                if not resource_id:
-                    resource_id = tool_name.replace("_", ":", 1)
+    # 添加 user 消息
+    output_messages.append({
+        "role": "user",
+        "content": stage1_prompt
+    })
 
-                result = await adapter.execute_tool(
-                    resource_id=resource_id,
-                    arguments=tc["input"]
-                )
+    # 获取相关工具（baseline 模式返回空列表）
+    tools = await adapter.get_tools_for_query(case_summary_without_tests)
 
-                tools_used.append({
-                    "resource_id": resource_id,
-                    "arguments": tc["input"],
-                    "result": result.get("result"),
-                    "success": result.get("success"),
-                    "trace": result.get("trace")
-                })
+    # 调用 LLM（阶段 1）
+    messages = [{"role": "user", "content": stage1_prompt}]
+    resp1 = call_llm(client, config.llm, messages, tools, SYSTEM_PROMPT)
+    total_input_tokens += resp1["input_tokens"]
+    total_output_tokens += resp1["output_tokens"]
 
-                tc_results.append({
-                    "id": tc["id"],
-                    "name": tc["name"],
-                    "input": tc["input"],
-                    "result": result,
-                })
+    # 处理工具调用（如果有）
+    if resp1["stop_reason"] == "tool_use":
+        for tc in resp1["tool_calls"]:
+            tool_name = tc["name"]
+            resource_id = None
+            for t in tools:
+                if t["name"] == tool_name:
+                    resource_id = t.get("_resource_id", tool_name.replace("_", ":", 1))
+                    break
+            if not resource_id:
+                resource_id = tool_name.replace("_", ":", 1)
 
-            # 将 assistant 消息追加到历史（格式因 provider 而异）
-            if provider == "anthropic":
-                messages.append({"role": "assistant", "content": resp["raw"].content})
-            else:
-                # OpenAI 格式：assistant 消息带 tool_calls 字段
-                messages.append({
-                    "role": "assistant",
-                    "content": resp["content_text"] or None,
-                    "tool_calls": [
-                        {
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": {
-                                "name": tc["name"],
-                                "arguments": json.dumps(tc["input"], ensure_ascii=False)
-                            }
-                        }
-                        for tc in resp["tool_calls"]
-                    ]
-                })
+            result = await adapter.execute_tool(resource_id=resource_id, arguments=tc["input"])
+            tools_used.append({
+                "resource_id": resource_id,
+                "arguments": tc["input"],
+                "result": result.get("result"),
+                "success": result.get("success")
+            })
 
-            # 追加工具结果消息
-            messages.extend(build_tool_result_messages(provider, tc_results))
+    # 获取阶段 1 响应文本
+    stage1_response = resp1["content_text"]
+    stage1_response = stage1_response.replace('```', '').strip()
 
-        else:
-            break
+    # 解析阶段 1 响应
+    stage1_parsed = parse_response_sections(stage1_response)
 
-    final_text = resp["content_text"] if resp else ""
-    prediction = extract_diagnosis(final_text)
+    # 添加 assistant 消息（阶段 1）
+    output_messages.append({
+        "role": "assistant",
+        "content": {
+            "reasoning": stage1_parsed["reasoning"],
+            "answer": stage1_response  # 完整响应
+        }
+    })
+
+    # 提取额外信息请求
+    try:
+        preliminary_conclusion, additional_info_required = parse_assessment_output(stage1_response)
+    except:
+        additional_info_required = "Not required."
+
+    # ===== 阶段 2：最终诊断 =====
+    # 模拟患者代理提供辅助检查结果
+    stage2_prompt = final_template.format(additional_information=ancillary_tests)
+
+    # 添加 user 消息（阶段 2）
+    output_messages.append({
+        "role": "user",
+        "content": stage2_prompt
+    })
+
+    # 更新消息历史
+    messages.append({"role": "assistant", "content": stage1_response})
+    messages.append({"role": "user", "content": stage2_prompt})
+
+    # 调用 LLM（阶段 2）
+    resp2 = call_llm(client, config.llm, messages, tools, SYSTEM_PROMPT)
+    total_input_tokens += resp2["input_tokens"]
+    total_output_tokens += resp2["output_tokens"]
+
+    # 处理工具调用（如果有）
+    if resp2["stop_reason"] == "tool_use":
+        for tc in resp2["tool_calls"]:
+            tool_name = tc["name"]
+            resource_id = None
+            for t in tools:
+                if t["name"] == tool_name:
+                    resource_id = t.get("_resource_id", tool_name.replace("_", ":", 1))
+                    break
+            if not resource_id:
+                resource_id = tool_name.replace("_", ":", 1)
+
+            result = await adapter.execute_tool(resource_id=resource_id, arguments=tc["input"])
+            tools_used.append({
+                "resource_id": resource_id,
+                "arguments": tc["input"],
+                "result": result.get("result"),
+                "success": result.get("success")
+            })
+
+    # 获取阶段 2 响应文本
+    stage2_response = resp2["content_text"]
+    stage2_response = stage2_response.replace('```', '').strip()
+
+    # 解析阶段 2 响应
+    stage2_parsed = parse_response_sections(stage2_response)
+
+    # 添加 assistant 消息（阶段 2）
+    output_messages.append({
+        "role": "assistant",
+        "content": {
+            "reasoning": stage2_parsed["reasoning"],
+            "answer": stage2_response  # 完整响应
+        }
+    })
+
+    # 返回结果
     response_time = time.time() - start_time
     tokens_used = total_input_tokens + total_output_tokens
-    ground_truth = case.get("diagnosis", "")
-    correct = bool(ground_truth) and ground_truth.lower() in prediction.lower()
 
     return {
-        "case_id": case_id,
-        "ground_truth": ground_truth,
-        "prediction": prediction,
-        "correct": correct,
+        "output_messages": output_messages,
         "tools_used": tools_used,
-        "reasoning": final_text,
         "response_time": response_time,
         "tokens_used": tokens_used
     }
@@ -425,18 +551,26 @@ async def process_case_with_tools(
 async def run_inference(
     config_path: str,
     mode: str,
-    output_path: str,
+    output_dir: str,
     limit: int = None
 ):
-    """运行推理实验"""
+    """运行推理实验（输出格式与原始 MedRBench 一致）"""
 
     # 加载配置
     print(f"[INFO] 加载配置: {config_path}, 模式: {mode}")
     config = load_config(config_path, mode)
 
-    # 初始化 LLM 客户端（根据 provider 自动选择 Anthropic SDK 或 OpenAI SDK）
+    # 获取模型名称（用于输出目录）
+    model_name = getattr(config.llm, 'output_model_name', 'deepseek-r1')
+
+    # 初始化 LLM 客户端
     print(f"[INFO] LLM provider: {config.llm.provider}, model: {config.llm.model}")
     client = build_llm_client(config.llm)
+
+    # 创建输出目录
+    output_path = Path(output_dir) / f"1_turn_{model_name}"
+    output_path.mkdir(parents=True, exist_ok=True)
+    print(f"[INFO] 输出目录: {output_path}")
 
     # 初始化 ToolkitAdapter
     async with ToolkitAdapter(config) as adapter:
@@ -445,8 +579,14 @@ async def run_inference(
         cases = load_cases(DATA_PATH, limit=limit)
         print(f"[INFO] 共 {len(cases)} 个病例")
 
+        # 统计信息
+        successful_cases = 0
+        failed_cases = 0
+        total_tools_used = 0
+        total_response_time = 0
+        total_tokens = 0
+
         # 处理所有病例
-        results = []
         for case_id, case in tqdm(cases.items(), desc="处理病例"):
             try:
                 result = await process_case_with_tools(
@@ -456,58 +596,34 @@ async def run_inference(
                     client=client,
                     config=config
                 )
-                results.append(result)
+
+                # 构建输出消息（MedRBench 格式）
+                output_messages = result.get("output_messages", [])
+
+                # 保存单个病例文件
+                case_output_file = output_path / f"log_{case_id}.json"
+                with open(case_output_file, 'w', encoding='utf-8') as f:
+                    json.dump({"output_messages": output_messages}, f, ensure_ascii=False, indent=2)
+
+                # 更新统计
+                successful_cases += 1
+                total_tools_used += len(result.get("tools_used", []))
+                total_response_time += result.get("response_time", 0)
+                total_tokens += result.get("tokens_used", 0)
+
             except Exception as e:
                 print(f"[ERR] 处理病例 {case_id} 失败: {e}")
-                results.append({
-                    "case_id": case_id,
-                    "error": str(e)
-                })
+                failed_cases += 1
 
-        # 计算统计信息
-        total_cases = len(results)
-        successful_cases = len([r for r in results if "error" not in r])
-        correct_cases = len([r for r in results if r.get("correct", False)])
-        accuracy = correct_cases / successful_cases if successful_cases > 0 else 0
-
-        tool_usage_rate = len([r for r in results if r.get("tools_used")]) / successful_cases if successful_cases > 0 else 0
-        avg_tools_per_case = sum(len(r.get("tools_used", [])) for r in results) / successful_cases if successful_cases > 0 else 0
-        avg_response_time = sum(r.get("response_time", 0) for r in results) / successful_cases if successful_cases > 0 else 0
-        total_tokens = sum(r.get("tokens_used", 0) for r in results)
-
-        # 构建输出
-        output = {
-            "config": {
-                "mode": config.mode,
-                "llm_model": config.llm.model,
-                "mtoolhub_enabled": config.mtoolhub.enabled,
-                "search_top_k": config.mtoolhub.search_top_k if config.mtoolhub.enabled else None
-            },
-            "results": results,
-            "summary": {
-                "total_cases": total_cases,
-                "successful_cases": successful_cases,
-                "accuracy": accuracy,
-                "tool_usage_rate": tool_usage_rate,
-                "avg_tools_per_case": avg_tools_per_case,
-                "avg_response_time": avg_response_time,
-                "total_tokens": total_tokens
-            }
-        }
-
-        # 保存结果
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
-
-        print(f"\n[OK] 结果已保存到: {output_path}")
-        print(f"[INFO] 准确率: {accuracy:.2%}")
-        print(f"[INFO] 工具使用率: {tool_usage_rate:.2%}")
-        print(f"[INFO] 平均每病例工具数: {avg_tools_per_case:.2f}")
-        print(f"[INFO] 平均响应时间: {avg_response_time:.2f}s")
-        print(f"[INFO] 总 tokens: {total_tokens}")
+        # 打印统计信息
+        total_cases = successful_cases + failed_cases
+        print(f"\n[OK] 处理完成")
+        print(f"[INFO] 成功: {successful_cases}/{total_cases}")
+        print(f"[INFO] 失败: {failed_cases}/{total_cases}")
+        if successful_cases > 0:
+            print(f"[INFO] 平均工具调用数: {total_tools_used / successful_cases:.2f}")
+            print(f"[INFO] 平均响应时间: {total_response_time / successful_cases:.2f}s")
+            print(f"[INFO] 总 tokens: {total_tokens}")
 
 
 def main():
@@ -528,7 +644,7 @@ def main():
         "--output",
         type=str,
         required=True,
-        help="输出文件路径（如 results/baseline.json）"
+        help="输出目录路径（如 results/，会在其中创建 1_turn_{model}/ 子目录）"
     )
     parser.add_argument(
         "--limit",
@@ -543,7 +659,7 @@ def main():
     asyncio.run(run_inference(
         config_path=args.config,
         mode=args.mode,
-        output_path=args.output,
+        output_dir=args.output,
         limit=args.limit
     ))
 

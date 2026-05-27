@@ -1,0 +1,27 @@
+# DeepSeek-R1 消融实验：仅搜索不执行
+#
+# 实验说明：
+#   工具库搜索结果作为上下文提供给模型，但不实际执行工具
+#   用于测试：搜索质量 vs 工具执行 各自的贡献
+#
+# 运行方式：
+#   python src/Inference/one_turn_toolkit.py \
+#     --mode experimental \
+#     --config configs/deepseek_r1_ablation_search_only.yaml \
+#     --model-name deepseek-r1-search-only
+
+experimental:
+  mode: experimental
+  llm:
+    provider: openrouter
+    model: deepseek/deepseek-r1
+    temperature: 0.6
+    max_tokens: 10000
+    api_base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+  mtoolhub:
+    enabled: true
+    url: http://localhost:8080
+    search_top_k: 3
+    enable_execution: false
+    timeout: 30
