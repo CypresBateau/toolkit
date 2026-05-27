@@ -73,6 +73,63 @@ class ToolkitAdapter:
         # 创建 HTTP 客户端
         self.client = httpx.AsyncClient(timeout=self.timeout)
 
+    @staticmethod
+    def _convert_input_schema(input_schema) -> Dict[str, Any]:
+        """
+        将 MToolHub 的参数列表格式转换为 OpenAI function calling 的 JSON Schema 格式。
+
+        MToolHub 格式（列表）：
+          [{"name": "age", "type": "float", "description": "...", "options": null}, ...]
+
+        OpenAI 格式（JSON Schema）：
+          {"type": "object", "properties": {"age": {"type": "number", "description": "..."}}, "required": [...]}
+        """
+        if not input_schema:
+            return {"type": "object", "properties": {}, "required": []}
+
+        # 已经是 JSON Schema 格式（dict），直接返回
+        if isinstance(input_schema, dict):
+            return input_schema
+
+        # 参数列表格式，转换为 JSON Schema
+        type_map = {
+            "float": "number",
+            "int": "integer",
+            "integer": "integer",
+            "str": "string",
+            "string": "string",
+            "bool": "boolean",
+            "boolean": "boolean",
+        }
+
+        properties = {}
+        required = []
+
+        for param in input_schema:
+            param_name = param.get("name", "")
+            if not param_name:
+                continue
+
+            param_type = type_map.get(param.get("type", "str"), "string")
+            prop = {
+                "type": param_type,
+                "description": param.get("description", ""),
+            }
+
+            # 如果有枚举选项
+            options = param.get("options")
+            if options and isinstance(options, list):
+                prop["enum"] = options
+
+            properties[param_name] = prop
+            required.append(param_name)
+
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+        }
+
     async def get_tools_for_query(self, query: str) -> List[Dict[str, Any]]:
         """
         根据查询获取相关工具（Claude function calling 格式）
@@ -115,11 +172,7 @@ class ToolkitAdapter:
                 tool = {
                     "name": tool_name,
                     "description": item.get("description", ""),
-                    "input_schema": item.get("input_schema") or {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
+                    "input_schema": self._convert_input_schema(item.get("input_schema")),
                 }
 
                 # 保存原始 resource_id 用于后续执行
