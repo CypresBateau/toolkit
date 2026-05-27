@@ -17,15 +17,26 @@ async def search_tools(
     categories: Optional[str] = Query(None, description="限定类别，逗号分隔，如 tool,model"),
 ):
     """
-    语义搜索工具/模型/技能
-
-    使用向量检索进行语义匹配
+    语义搜索工具/模型/技能（GET 接口，适合短查询）
     """
+    return await _do_search(q, top_k, categories)
+
+
+@router.post("/api/tools/search", response_model=ToolSearchResponse)
+async def search_tools_post(request: ToolSearchRequest):
+    """
+    语义搜索工具/模型/技能（POST 接口，适合长文本查询如病例摘要）
+    """
+    categories_str = ",".join(request.categories) if request.categories else None
+    return await _do_search(request.query, request.top_k, categories_str)
+
+
+async def _do_search(q: str, top_k: int, categories: Optional[str]) -> ToolSearchResponse:
+    """搜索逻辑"""
     # 解析类别
     category_list = None
     if categories:
         category_list = [c.strip() for c in categories.split(",")]
-        # 验证类别
         valid_categories = {"tool", "model", "skill"}
         for cat in category_list:
             if cat not in valid_categories:

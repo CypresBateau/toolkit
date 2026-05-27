@@ -145,13 +145,19 @@ class ToolkitAdapter:
             return []
 
         try:
-            # 调用 MToolHub 搜索接口
-            response = await self.client.get(
+            # 调用 MToolHub 搜索接口（POST，支持长文本病例摘要）
+            response = await self.client.post(
                 f"{self.mtoolhub_url}/api/tools/search",
-                params={"q": query, "top_k": self.search_top_k}
+                json={
+                    "query": query,
+                    "top_k": self.search_top_k,
+                }
             )
             response.raise_for_status()
             data = response.json()
+            if not isinstance(data, dict):
+                print(f"[WARN] 搜索接口返回格式异常: {type(data)}, 内容: {str(data)[:200]}")
+                return []
 
             # 提取搜索结果
             results = data.get("results", [])
