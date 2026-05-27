@@ -91,6 +91,19 @@ class ToolkitAdapter:
         if isinstance(input_schema, dict):
             return input_schema
 
+        # 字符串格式（docstring）：返回宽松 schema，LLM 通过 description 理解参数
+        if isinstance(input_schema, str):
+            return {
+                "type": "object",
+                "properties": {
+                    "arguments": {
+                        "type": "string",
+                        "description": input_schema,
+                    }
+                },
+                "required": []
+            }
+
         # 参数列表格式，转换为 JSON Schema
         type_map = {
             "float": "number",
