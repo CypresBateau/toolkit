@@ -1,0 +1,69 @@
+{
+  "config": {
+    "mode": "baseline",
+    "llm_model": "anthropic/claude-sonnet-4-5",
+    "mtoolhub_enabled": false,
+    "search_top_k": null
+  },
+  "results": [
+    {
+      "case_id": "PMC11625232",
+      "ground_truth": "",
+      "prediction": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age,",
+      "correct": false,
+      "tools_used": [],
+      "reasoning": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age, sex, relevant medical history)\n- **Chief complaint** and presenting symptoms\n- **Physical examination findings**\n- **Vital signs**\n- **Laboratory results** (if available)\n- **Imaging studies** (if available)\n- **Timeline** of symptom onset and progression\n\nCould you please provide the patient's clinical information? Once you share these details, I'll analyze them systematically and provide a diagnosis with my clinical reasoning and confidence level.",
+      "response_time": 5.746409893035889,
+      "tokens_used": 281
+    },
+    {
+      "case_id": "PMC11544788",
+      "ground_truth": "",
+      "prediction": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I would need details such as:\n\n- **Patient demographics** (a",
+      "correct": false,
+      "tools_used": [],
+      "reasoning": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I would need details such as:\n\n- **Patient demographics** (age, sex, relevant medical history)\n- **Chief complaint** and presenting symptoms\n- **Physical examination findings**\n- **Vital signs**\n- **Laboratory results** (if available)\n- **Imaging studies** (if available)\n- **Timeline** of symptom onset and progression\n\nCould you please provide the patient's clinical information? Once you share these details, I'll be able to:\n1. Analyze the data systematically\n2. Apply relevant clinical tools or scoring systems if appropriate\n3. Provide a differential diagnosis with reasoning\n4. Indicate my confidence level in the assessment\n\nPlease share the patient case details, and I'll proceed with the clinical analysis.",
+      "response_time": 4.452922582626343,
+      "tokens_used": 328
+    },
+    {
+      "case_id": "PMC11418098",
+      "ground_truth": "",
+      "prediction": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age,",
+      "correct": false,
+      "tools_used": [],
+      "reasoning": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age, sex, relevant medical history)\n- **Chief complaint** and presenting symptoms\n- **Physical examination findings**\n- **Vital signs**\n- **Laboratory results** (if available)\n- **Imaging studies** (if available)\n- **Timeline** of symptom onset and progression\n\nCould you please provide the patient's clinical information? Once you share these details, I'll analyze them systematically and provide a diagnosis with clinical reasoning and confidence level.",
+      "response_time": 3.797419786453247,
+      "tokens_used": 280
+    },
+    {
+      "case_id": "PMC11551029",
+      "ground_truth": "",
+      "prediction": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age,",
+      "correct": false,
+      "tools_used": [],
+      "reasoning": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age, sex, relevant medical history)\n- **Chief complaint** and presenting symptoms\n- **Physical examination findings**\n- **Vital signs**\n- **Laboratory results** (if available)\n- **Imaging studies** (if available)\n- **Timeline** of symptom onset and progression\n\nCould you please provide the patient's clinical information? Once you share these details, I'll analyze them systematically and provide a diagnosis with my clinical reasoning and confidence level.",
+      "response_time": 4.382323980331421,
+      "tokens_used": 281
+    },
+    {
+      "case_id": "PMC11447345",
+      "ground_truth": "",
+      "prediction": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age,",
+      "correct": false,
+      "tools_used": [],
+      "reasoning": "I'd be happy to help with a diagnosis, but I don't see any patient information in your message. To provide an accurate clinical assessment, I'll need details such as:\n\n- **Patient demographics** (age, sex, relevant medical history)\n- **Chief complaint** and presenting symptoms\n- **Physical examination findings**\n- **Vital signs**\n- **Laboratory results** (if available)\n- **Imaging studies** (if available)\n- **Timeline** of symptom onset and progression\n\nCould you please provide the patient's clinical information? Once you share these details, I'll analyze them systematically and provide a diagnosis with clinical reasoning and confidence level.",
+      "response_time": 4.000453233718872,
+      "tokens_used": 280
+    }
+  ],
+  "summary": {
+    "total_cases": 5,
+    "successful_cases": 5,
+    "accuracy": 0.0,
+    "tool_usage_rate": 0.0,
+    "avg_tools_per_case": 0.0,
+    "avg_response_time": 4.475905895233154,
+    "total_tokens": 1450
+  }
+}
