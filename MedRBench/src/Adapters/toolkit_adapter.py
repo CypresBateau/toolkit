@@ -161,9 +161,9 @@ class ToolkitAdapter:
 
             # 提取搜索结果
             results = data.get("results", [])
-            # 调试：打印第一个结果的类型和内容
-            if results:
-                print(f"[DEBUG] results[0] type={type(results[0])}, value={str(results[0])[:200]}")
+            # 调试：打印所有结果的类型
+            for i, r in enumerate(results):
+                print(f"[DEBUG] results[{i}] type={type(r)}, value={str(r)[:100]}")
 
             # 转换为 Claude function calling 格式
             # 搜索结果结构：{"item": {...资源元数据...}, "score": float, "category": str}
