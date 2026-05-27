@@ -106,6 +106,9 @@ class ToolkitAdapter:
         required = []
 
         for param in input_schema:
+            if not isinstance(param, dict):
+                print(f"[DEBUG] input_schema 中发现非字典元素: type={type(param)}, value={str(param)[:100]}")
+                continue
             param_name = param.get("name", "")
             if not param_name:
                 continue
