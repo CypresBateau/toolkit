@@ -380,7 +380,7 @@ def process_instance(key, json_data, gpt_prompt, ask_template, final_template,
 # 推理入口
 # ======================
 
-def run_inference(model_name, config_path=None, mode="baseline", limit=None):
+def run_inference(model_name, config_path=None, mode="baseline", limit=None, case_ids=None):
     """
     运行推理实验。
 
@@ -394,6 +394,8 @@ def run_inference(model_name, config_path=None, mode="baseline", limit=None):
         "baseline"（无工具）或 "experimental"（有工具）
     limit : int
         限制处理的病例数（用于快速测试）
+    case_ids : list
+        指定要处理的病例 ID 列表（如果提供，则只处理这些病例）
     """
     print(f"[INFO] 运行模式: {mode}, 模型: {model_name}")
 
@@ -414,9 +416,18 @@ def run_inference(model_name, config_path=None, mode="baseline", limit=None):
         print(f"[ERR] 加载数据失败: {e}")
         return
 
-    # 限制病例数（用于快速测试）
+    # 筛选病例
     keys = list(json_data.keys())
-    if limit:
+
+    if case_ids:
+        # 如果指定了 case_ids，只处理这些病例
+        keys = [k for k in keys if k in case_ids]
+        print(f"[INFO] 指定处理 {len(case_ids)} 个病例，找到 {len(keys)} 个")
+        if len(keys) < len(case_ids):
+            missing = set(case_ids) - set(keys)
+            print(f"[WARN] 以下病例 ID 不存在: {missing}")
+    elif limit:
+        # 否则使用 limit 限制
         keys = keys[:limit]
         print(f"[INFO] 限制处理 {limit} 个病例")
 
@@ -503,6 +514,12 @@ def main():
         default=None,
         help="限制处理的病例数（用于快速测试，如 --limit 5）"
     )
+    parser.add_argument(
+        "--case-ids",
+        type=str,
+        default=None,
+        help="指定要处理的病例 ID 列表，逗号分隔（如 --case-ids PMC11385788,PMC11416466）"
+    )
 
     args = parser.parse_args()
 
@@ -510,11 +527,17 @@ def main():
         print("[ERR] 请设置环境变量 OPENROUTER_API_KEY")
         sys.exit(1)
 
+    # 解析 case_ids
+    case_ids = None
+    if args.case_ids:
+        case_ids = [cid.strip() for cid in args.case_ids.split(',')]
+
     run_inference(
         model_name=args.model_name,
         config_path=args.config,
         mode=args.mode,
-        limit=args.limit
+        limit=args.limit,
+        case_ids=case_ids
     )
 
 
