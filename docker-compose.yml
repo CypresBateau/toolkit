@@ -152,7 +152,8 @@ services:
       - GATEWAY_BASE_URL=http://toolkit-gateway:9000  # 指向已有 gateway
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}
       - CLAUDE_MODEL=claude-sonnet-4-20250514
-      - EMBEDDING_MODEL=/app/models/S-PubMedBert-MS-MARCO
+      # - EMBEDDING_MODEL=/app/models/S-PubMedBert-MS-MARCO  # 英文模型（本地挂载）
+      - EMBEDDING_MODEL=BAAI/bge-m3  # 中英文多语言模型（HuggingFace 自动下载）
       - EMBEDDING_DEVICE=cpu
       - DIRECT_CALL_THRESHOLD=0.85
       - CLAUDE_SELECT_THRESHOLD=0.60
