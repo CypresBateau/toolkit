@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     claude_max_tokens: int = 4096
 
     # Embedding 模型
-    embedding_model: str = "pritamdeka/S-PubMedBert-MS-MARCO"
+    embedding_model: str = "BAAI/bge-m3"
     embedding_device: str = "cpu"
     embedding_cache_dir: Optional[str] = None
 

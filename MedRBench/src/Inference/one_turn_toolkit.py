@@ -268,11 +268,14 @@ def process_instance(key, json_data, gpt_prompt, ask_template, final_template,
             preliminary_conclusion, additional_info_required = parse_assessment_output(primary_answer)
 
             # 执行工具调用（experimental 模式）
+            # 构建 function_name -> resource_id 映射（从 tools 列表中取，避免反推出错）
+            tool_name_to_resource_id = {t["name"]: t.get("_resource_id", t["name"]) for t in tools}
+
             tool_results_log = []
             if toolkit_adapter is not None and loop is not None and tool_calls_1:
                 for tc in tool_calls_1:
                     import json as _json
-                    resource_id = tc.function.name.replace("_", ":", 1)
+                    resource_id = tool_name_to_resource_id.get(tc.function.name, tc.function.name)
                     arguments = _json.loads(tc.function.arguments)
                     result = loop.run_until_complete(
                         toolkit_adapter.execute_tool(resource_id=resource_id, arguments=arguments)
@@ -325,7 +328,7 @@ def process_instance(key, json_data, gpt_prompt, ask_template, final_template,
             if toolkit_adapter is not None and loop is not None and tool_calls_2:
                 for tc in tool_calls_2:
                     import json as _json
-                    resource_id = tc.function.name.replace("_", ":", 1)
+                    resource_id = tool_name_to_resource_id.get(tc.function.name, tc.function.name)
                     arguments = _json.loads(tc.function.arguments)
                     result = loop.run_until_complete(
                         toolkit_adapter.execute_tool(resource_id=resource_id, arguments=arguments)
