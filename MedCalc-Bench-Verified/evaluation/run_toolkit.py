@@ -307,6 +307,9 @@ def _convert_schema(input_schema):
         options = param.get("options")
         if options and isinstance(options, list):
             prop["enum"] = options
+        elif options and isinstance(options, str):
+            # 字符串格式的 options 追加到 description，让 LLM 知道合法值
+            prop["description"] += f" (Valid values/range: {options})"
         properties[name] = prop
         required.append(name)
     return {"type": "object", "properties": properties, "required": required}
