@@ -1,7 +1,11 @@
 {
     "lab test": {
-        "average": 40.0,
-        "std": 0.22
+        "average": 37.5,
+        "std": 0.08
+    },
+    "risk": {
+        "average": 50.0,
+        "std": 0.16
     },
     "overall": {
         "average": 40.0,
