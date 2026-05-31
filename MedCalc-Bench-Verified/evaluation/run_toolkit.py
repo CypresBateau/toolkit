@@ -330,7 +330,7 @@ def execute_tool(resource_id: str, arguments: dict):
 # LLM 调用（支持 function calling 多轮）
 # ======================
 
-def call_llm_with_tools(model, messages, tools=None, max_retries=3):
+def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retries=3):
     """
     调用 LLM，支持 function calling。
     如果 LLM 发起工具调用，执行工具并将结果追加到消息中，再次调用 LLM。
@@ -350,6 +350,8 @@ def call_llm_with_tools(model, messages, tools=None, max_retries=3):
 
     tool_calls_log = []
     current_messages = list(messages)
+    # 使用 tool_id_map 还原 resource_id，避免反推出错
+    id_map = tool_id_map or {}
 
     # 最多 3 轮工具调用
     for turn in range(3):
@@ -361,7 +363,7 @@ def call_llm_with_tools(model, messages, tools=None, max_retries=3):
         )
         if tools:
             kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+            kwargs["tool_choice"] = "required"  # 强制调用工具，避免 LLM 自行计算
 
         for attempt in range(max_retries):
             try:
@@ -390,8 +392,8 @@ def call_llm_with_tools(model, messages, tools=None, max_retries=3):
             except Exception:
                 arguments = {}
 
-            # 还原 resource_id（下划线 -> 冒号，只替换第一个）
-            resource_id = func_name.replace("_", ":", 1)
+            # 从 tool_id_map 还原 resource_id（避免反推出错）
+            resource_id = id_map.get(func_name, func_name)
 
             result = execute_tool(resource_id, arguments)
             tool_calls_log.append({
@@ -500,7 +502,9 @@ def run(model, prompt_style, limit=None):
         ]
 
         # 调用 LLM（带工具）
-        raw_answer, tool_calls_log = call_llm_with_tools(model, messages, tools=tools or None)
+        raw_answer, tool_calls_log = call_llm_with_tools(
+            model, messages, tools=tools or None, tool_id_map=tool_id_map
+        )
         if raw_answer is None:
             raw_answer = ""
 
