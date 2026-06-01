@@ -68,6 +68,27 @@ def zero_shot(note, question):
     return system_msg, user_temp
 
 
+def zero_shot_with_tools(note, question):
+    system_msg = (
+        'You are a helpful assistant for calculating a score for a given patient note. '
+        'You have access to medical calculator tools. '
+        'You MUST call the appropriate tool to compute the answer — do not calculate manually. '
+        'IMPORTANT: Before passing any parameter to a tool, convert the value to the unit specified '
+        'in the tool parameter description. Do not pass raw values from the patient note if the units differ. '
+        'After receiving the tool result, output only a JSON dict formatted as '
+        '{"step_by_step_thinking": str(your_step_by_step_thinking_procress_to_solve_the_question), '
+        '"answer": str(short_and_direct_answer_of_the_question)}.'
+    )
+    user_temp = (
+        f'Here is the patient note:\n{note}\n\n'
+        f'Here is the task:\n{question}\n\n'
+        f'Please call the appropriate tool first, then output the JSON dict formatted as '
+        f'{{"step_by_step_thinking": str(your_step_by_step_thinking_procress_to_solve_the_question), '
+        f'"answer": str(short_and_direct_answer_of_the_question)}}:'
+    )
+    return system_msg, user_temp
+
+
 def direct_answer(note, question):
     system_msg = (
         'You are a helpful assistant for calculating a score for a given patient note. '
@@ -492,7 +513,10 @@ def run(model, prompt_style, limit=None):
 
         # 构建提示
         if prompt_style == "zero_shot":
-            system, user = zero_shot(patient_note, question)
+            if tools:
+                system, user = zero_shot_with_tools(patient_note, question)
+            else:
+                system, user = zero_shot(patient_note, question)
         elif prompt_style == "one_shot":
             one_shot_question = question
             if calculator_id == "24":
