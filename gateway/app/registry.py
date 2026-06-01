@@ -25,6 +25,9 @@ class ToolRegistry:
                 with open(config_file) as f:
                     cfg = yaml.safe_load(f)
                 name = cfg["name"]
+                if not cfg.get("enabled", True):
+                    print(f"[Registry] Skipped (disabled): {name}")
+                    continue
                 self._tools[name] = cfg
                 print(f"[Registry] Registered: {name}  type={cfg.get('type')}  gpu={cfg.get('gpu_memory_mb', 0)}MB")
             except Exception as e:

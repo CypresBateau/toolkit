@@ -27,8 +27,8 @@ def run_tool(tool: Dict[str, Any], arguments: Dict[str, Any]) -> Dict[str, Any]:
         else:
             flat[k] = v
 
-    # generated_code 含顶层 import，需传入 __builtins__ 才能正常执行
-    local_ns: Dict[str, Any] = {}
-    exec(tool["generated_code"], {"__builtins__": __builtins__}, local_ns)  # noqa: S102
-    func = local_ns[tool["function_name"]]
+    # globals 和 locals 用同一个 dict，确保函数体能访问顶层 import 的模块
+    ns: Dict[str, Any] = {"__builtins__": __builtins__}
+    exec(tool["generated_code"], ns)  # noqa: S102
+    func = ns[tool["function_name"]]
     return func(**flat)
