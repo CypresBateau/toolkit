@@ -14,9 +14,9 @@ __pycache__/
 *.pyo
 
 # 数据文件
-*.dcm
-*.csv
-my_test/images/
+# *.dcm
+# *.csv
+# my_test/images/
 
 # 系统
 .DS_Store
@@ -42,10 +42,3 @@ peritumoral-radiomics/
 MVFA-AD/CLIP/ckpt/
 MVFA-AD/ckpt/
 
-# 备份
-*.bak
-*.bak/
-MToolHub_2026_5_24.bak/
-
-# 无关项目
-peritumoral-radiomics/

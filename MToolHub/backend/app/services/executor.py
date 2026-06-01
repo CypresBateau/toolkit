@@ -53,7 +53,7 @@ class UnifiedExecutor:
             )
         elif resource.gateway_interface == "predict":
             return await self._execute_predict_interface(
-                resource, user_message, file_bytes, filename, arguments, conversation_history
+                resource, file_bytes, filename, arguments
             )
         else:
             return {
@@ -118,19 +118,9 @@ class UnifiedExecutor:
                 "trace": "\n".join(trace),
             }
 
-        # 步骤 3：解读结果
-        trace.append("正在解读结果...")
-        interpretation = await claude_client.interpret_result(
-            user_message=user_message,
-            tool_result=result,
-            tool_name=resource.name,
-            conversation_history=conversation_history,
-        )
-        trace.append("解读完成")
-
         return {
             "success": True,
-            "response": interpretation,
+            "response": "",
             "result": result,
             "trace": "\n".join(trace),
         }
@@ -138,11 +128,9 @@ class UnifiedExecutor:
     async def _execute_predict_interface(
         self,
         resource: ResourceMetadata,
-        user_message: str,
         file_bytes: Optional[bytes],
         filename: Optional[str],
         arguments: Optional[Dict[str, Any]],
-        conversation_history: Optional[list],
     ) -> Dict[str, Any]:
         """
         执行 predict 接口（multipart/form-data）
@@ -150,7 +138,6 @@ class UnifiedExecutor:
         流程：
         1. 检查是否有文件上传
         2. 调用 Gateway /predict 接口
-        3. 使用 Claude 解读结果
         """
         trace = []
 
@@ -166,7 +153,6 @@ class UnifiedExecutor:
         # 步骤 2：调用 Gateway
         trace.append(f"正在调用 {resource.gateway_tool_name} 模型...")
         try:
-            # 获取参数
             params = arguments or {}
             top_k = params.get("top_k", 5)
 
@@ -186,19 +172,9 @@ class UnifiedExecutor:
                 "trace": "\n".join(trace),
             }
 
-        # 步骤 3：解读结果
-        trace.append("正在解读结果...")
-        interpretation = await claude_client.interpret_result(
-            user_message=user_message,
-            tool_result=result,
-            tool_name=resource.name,
-            conversation_history=conversation_history,
-        )
-        trace.append("解读完成")
-
         return {
             "success": True,
-            "response": interpretation,
+            "response": "",
             "result": result,
             "trace": "\n".join(trace),
         }
