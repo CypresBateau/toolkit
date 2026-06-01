@@ -564,7 +564,27 @@ def run(model, prompt_style, limit=None):
 
         tool_used = len(tool_calls_log) > 0
         tool_ok = any(t["success"] for t in tool_calls_log)
-        print(f"Row {row['Row Number']:>3} | {calculator_name[:40]:<40} | tool={'OK' if tool_ok else 'FAIL' if tool_used else 'NONE'} | {status} (pred={answer_value}, gt={row['Ground Truth Answer']})")
+
+        # 打印详细对比（四列：tool args, tool result, LLM answer, GT）
+        print(f"\n{'='*120}")
+        print(f"Row {row['Row Number']:>3} | {calculator_name}")
+        print(f"{'-'*120}")
+
+        if tool_calls_log:
+            for i, tc in enumerate(tool_calls_log, 1):
+                args_str = json.dumps(tc['arguments'], ensure_ascii=False)[:60]
+                result_val = tc['result'].get('result') if isinstance(tc['result'], dict) else tc['result']
+                result_str = str(result_val)[:40] if tc['success'] else f"FAIL: {tc.get('error', 'unknown')[:40]}"
+                print(f"  Tool #{i}: {tc['resource_id']}")
+                print(f"    Args  : {args_str}")
+                print(f"    Result: {result_str}")
+        else:
+            print(f"  Tool: NONE")
+
+        print(f"  LLM Answer: {answer_value}")
+        print(f"  GT Answer : {row['Ground Truth Answer']}")
+        print(f"  Status    : {status}")
+        print(f"{'='*120}\n")
 
         outputs = {
             "Row Number": int(row["Row Number"]),
