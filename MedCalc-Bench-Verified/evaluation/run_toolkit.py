@@ -323,7 +323,8 @@ def execute_tool(resource_id: str, arguments: dict):
             json={"resource_id": resource_id, "arguments": arguments},
             timeout=30.0
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            return {"success": False, "result": None, "error": f"HTTP {resp.status_code}: {resp.text}"}
         return resp.json()
     except Exception as e:
         return {"success": False, "result": None, "error": str(e)}
@@ -399,18 +400,28 @@ def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retri
             resource_id = id_map.get(func_name, func_name)
 
             result = execute_tool(resource_id, arguments)
+            success = result.get("success", False)
+            error = result.get("error", "")
+            tool_result = result.get("result")
+            if success:
+                # 只取 result 字段里的数值，避免打印整个 interpretation
+                val = tool_result.get("result") if isinstance(tool_result, dict) else tool_result
+                print(f"  [TOOL] {resource_id} -> OK | result={val}")
+            else:
+                print(f"  [TOOL] {resource_id} -> FAIL | {error}")
             tool_calls_log.append({
                 "resource_id": resource_id,
                 "arguments": arguments,
-                "result": result.get("result"),
-                "success": result.get("success", False)
+                "result": tool_result,
+                "success": success,
+                "error": error or None,
             })
 
             # 将工具结果追加到消息
             current_messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": json.dumps(result.get("result", ""), ensure_ascii=False)
+                "content": json.dumps(tool_result or "", ensure_ascii=False)
             })
 
     # 超过最大轮次，返回最后一条文本
@@ -526,6 +537,10 @@ def run(model, prompt_style, limit=None):
             answer_value = str(e)
             explanation = str(e)
             status = "Incorrect"
+
+        tool_used = len(tool_calls_log) > 0
+        tool_ok = any(t["success"] for t in tool_calls_log)
+        print(f"Row {row['Row Number']:>3} | {calculator_name[:40]:<40} | tool={'OK' if tool_ok else 'FAIL' if tool_used else 'NONE'} | {status} (pred={answer_value}, gt={row['Ground Truth Answer']})")
 
         outputs = {
             "Row Number": int(row["Row Number"]),
