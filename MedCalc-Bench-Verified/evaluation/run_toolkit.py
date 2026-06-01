@@ -572,9 +572,9 @@ def run(model, prompt_style, limit=None):
 
         if tool_calls_log:
             for i, tc in enumerate(tool_calls_log, 1):
-                args_str = json.dumps(tc['arguments'], ensure_ascii=False)[:60]
+                args_str = json.dumps(tc['arguments'], ensure_ascii=False)
                 result_val = tc['result'].get('result') if isinstance(tc['result'], dict) else tc['result']
-                result_str = str(result_val)[:40] if tc['success'] else f"FAIL: {tc.get('error', 'unknown')[:40]}"
+                result_str = str(result_val) if tc['success'] else f"FAIL: {tc.get('error', '')}"
                 print(f"  Tool #{i}: {tc['resource_id']}")
                 print(f"    Args  : {args_str}")
                 print(f"    Result: {result_str}")
