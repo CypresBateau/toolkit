@@ -71,18 +71,35 @@ def zero_shot(note, question):
 def zero_shot_with_tools(note, question):
     system_msg = (
         'You are a helpful assistant for calculating a score for a given patient note. '
-        'You have access to medical calculator tools. '
-        'You MUST call the appropriate tool to compute the answer — do not calculate manually. '
-        'IMPORTANT: Before passing any parameter to a tool, convert the value to the unit specified '
-        'in the tool parameter description. Do not pass raw values from the patient note if the units differ. '
-        'After receiving the tool result, output only a JSON dict formatted as '
+        'You have access to a set of medical calculator and unit conversion tools. '
+        '\n\n'
+        'Follow these steps strictly:\n'
+        '1. READ the task and identify what needs to be calculated.\n'
+        '2. SELECT the most appropriate calculator tool based on its name and description. '
+        'If multiple tools are available, choose the one whose description best matches the task.\n'
+        '3. CHECK each parameter the tool requires. Compare the units in the tool parameter description '
+        'with the units in the patient note.\n'
+        '4. CONVERT units if needed: if the patient note uses different units than the tool expects '
+        '(e.g., mg/dL vs mmol/L, mg/dL vs umol/L), first call the appropriate unit conversion tool '
+        'from the available tools to get the correct value, then pass the converted value to the calculator.\n'
+        '5. CALL the calculator tool with all parameters in the correct units.\n'
+        '6. After receiving the tool result, output a JSON dict formatted as '
         '{"step_by_step_thinking": str(your_step_by_step_thinking_procress_to_solve_the_question), '
-        '"answer": str(short_and_direct_answer_of_the_question)}.'
+        '"answer": str(short_and_direct_answer_of_the_question)}.\n'
+        '\n'
+        'IMPORTANT RULES:\n'
+        '- Never calculate manually. Always use the tools.\n'
+        '- Never pass a value in the wrong unit. Always convert first if units differ.\n'
+        '- You may call multiple tools in sequence (e.g., unit conversion first, then calculator).\n'
+        '- If you call a tool and it returns a result, you MUST use that tool result as your final answer. '
+        'Do NOT recalculate or modify the tool result.\n'
+        '- If a tool call fails or returns an unexpected result, do not retry with the same arguments.'
     )
     user_temp = (
         f'Here is the patient note:\n{note}\n\n'
         f'Here is the task:\n{question}\n\n'
-        f'Please call the appropriate tool first, then output the JSON dict formatted as '
+        f'Please select the appropriate tool(s), convert units if necessary, call the calculator, '
+        f'then output the JSON dict formatted as '
         f'{{"step_by_step_thinking": str(your_step_by_step_thinking_procress_to_solve_the_question), '
         f'"answer": str(short_and_direct_answer_of_the_question)}}:'
     )
@@ -594,16 +611,27 @@ def run(model, prompt_style, limit=None):
             "Note ID": note_id,
             "Patient Note": patient_note,
             "Question": question,
+            "LLM Raw Response": raw_answer,
             "LLM Answer": answer_value,
             "LLM Explanation": explanation if prompt_style != "direct_answer" else "N/A",
             "Ground Truth Answer": str(row["Ground Truth Answer"]),
             "Ground Truth Explanation": row["Ground Truth Explanation"],
             "Result": status,
+            "Tools Matched": [t["function"]["name"] for t in tools] if tools else [],
+            "Tool Called": len(tool_calls_log) > 0,
+            "Tool Call Count": len(tool_calls_log),
+            "Tool Success": any(t["success"] for t in tool_calls_log) if tool_calls_log else False,
+            "Tools Used": [
+                {
+                    "resource_id": tc["resource_id"],
+                    "arguments": tc["arguments"],
+                    "result": tc["result"],
+                    "success": tc["success"],
+                    "error": tc.get("error"),
+                }
+                for tc in tool_calls_log
+            ],
         }
-
-        # 记录工具调用信息（额外字段，不影响评估）
-        if tool_calls_log:
-            outputs["Tools Used"] = tool_calls_log
 
         with open(output_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(outputs, ensure_ascii=False) + "\n")
