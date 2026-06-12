@@ -470,7 +470,7 @@ def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retri
 # 主推理循环
 # ======================
 
-def run(model, prompt_style, limit=None):
+def run(model, prompt_style, limit=None, calids=None):
     if not OPENROUTER_API_KEY:
         print("[ERR] 请设置环境变量 OPENROUTER_API_KEY")
         sys.exit(1)
@@ -497,6 +497,9 @@ def run(model, prompt_style, limit=None):
 
     # 加载数据
     df = pd.read_csv(DATA_PATH)
+    if calids:
+        df = df[df["Calculator ID"].astype(str).isin([str(c) for c in calids])]
+        print(f"[INFO] 过滤 Calculator ID: {calids}，共 {len(df)} 行")
     if limit:
         df = df.iloc[:limit]
         print(f"[INFO] 限制处理前 {limit} 行")
@@ -661,10 +664,13 @@ if __name__ == "__main__":
                         help="MToolHub 服务地址（默认读取 MTOOLHUB_URL 环境变量，或 http://localhost:8081）")
     parser.add_argument("--top-k", type=int, default=3,
                         help="工具搜索返回数量（默认 3）")
+    parser.add_argument("--calids", type=str, default=None,
+                        help="只跑指定 Calculator ID，逗号分隔，如 --calids 11,23,46,60")
     args = parser.parse_args()
 
     if args.mtoolhub_url:
         MTOOLHUB_URL = args.mtoolhub_url
     MTOOLHUB_SEARCH_TOP_K = args.top_k
 
-    run(args.model, args.prompt, args.limit)
+    calids = [c.strip() for c in args.calids.split(",")] if args.calids else None
+    run(args.model, args.prompt, args.limit, calids)
