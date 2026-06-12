@@ -470,7 +470,7 @@ def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retri
 # 主推理循环
 # ======================
 
-def run(model, prompt_style, limit=None, calids=None):
+def run(model, prompt_style, limit=None, calids=None, output_dir=None):
     if not OPENROUTER_API_KEY:
         print("[ERR] 请设置环境变量 OPENROUTER_API_KEY")
         sys.exit(1)
@@ -478,9 +478,10 @@ def run(model, prompt_style, limit=None, calids=None):
     # 输出文件名
     model_safe = model.replace("/", "_")
     output_filename = f"{model_safe}_{prompt_style}_toolkit.jsonl"
-    output_path = os.path.join("outputs", output_filename)
+    _out_dir = output_dir or "outputs"
+    output_path = os.path.join(_out_dir, output_filename)
 
-    os.makedirs("outputs", exist_ok=True)
+    os.makedirs(_out_dir, exist_ok=True)
     os.makedirs("results", exist_ok=True)
 
     # 加载已有结果（断点续跑）
@@ -666,6 +667,8 @@ if __name__ == "__main__":
                         help="工具搜索返回数量（默认 3）")
     parser.add_argument("--calids", type=str, default=None,
                         help="只跑指定 Calculator ID，逗号分隔，如 --calids 11,23,46,60")
+    parser.add_argument("--output", type=str, default=None,
+                        help="输出目录，默认为 outputs/")
     args = parser.parse_args()
 
     if args.mtoolhub_url:
@@ -673,4 +676,4 @@ if __name__ == "__main__":
     MTOOLHUB_SEARCH_TOP_K = args.top_k
 
     calids = [c.strip() for c in args.calids.split(",")] if args.calids else None
-    run(args.model, args.prompt, args.limit, calids)
+    run(args.model, args.prompt, args.limit, calids, args.output)
