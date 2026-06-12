@@ -6,7 +6,7 @@ import os
 def compute_overall_accuracy(output_path, model_name, prompt_style): 
     category_accuracy = {}
 
-    with open(f"outputs/{output_path}") as file:
+    with open(output_path) as file:
         for line in file:
             data = json.loads(line)
             
