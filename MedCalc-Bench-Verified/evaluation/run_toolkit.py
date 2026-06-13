@@ -93,7 +93,8 @@ def zero_shot_with_tools(note, question):
         '- You may call multiple tools in sequence (e.g., unit conversion first, then calculator).\n'
         '- If you call a tool and it returns a result, you MUST use that tool result as your final answer. '
         'Do NOT recalculate or modify the tool result.\n'
-        '- If a tool call fails or returns an unexpected result, do not retry with the same arguments.'
+        '- If a tool call fails or returns an unexpected result, do not retry with the same arguments.\n'
+        '- Report numeric tool results as-is. Do NOT append "%" or divide by 100.'
     )
     user_temp = (
         f'Here is the patient note:\n{note}\n\n'
