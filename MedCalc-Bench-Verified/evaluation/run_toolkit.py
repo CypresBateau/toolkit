@@ -439,7 +439,7 @@ def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retri
 
             result = execute_tool(resource_id, arguments)
             success = result.get("success", False)
-            error = result.get("error", "")
+            error = result.get("error") or result.get("response") or ""
             tool_result = result.get("result")
             if success:
                 # 只取 result 字段里的数值，避免打印整个 interpretation

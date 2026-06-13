@@ -8,6 +8,11 @@ executor.py — 通过 exec() 动态执行工具代码。
 """
 from __future__ import annotations
 
+import math
+import statistics
+import re
+import datetime
+import decimal
 from typing import Any, Dict
 
 
@@ -28,7 +33,14 @@ def run_tool(tool: Dict[str, Any], arguments: Dict[str, Any]) -> Dict[str, Any]:
             flat[k] = v
 
     # globals 和 locals 用同一个 dict，确保函数体能访问顶层 import 的模块
-    ns: Dict[str, Any] = {"__builtins__": __builtins__}
+    ns: Dict[str, Any] = {
+        "__builtins__": __builtins__,
+        "math": math,
+        "statistics": statistics,
+        "re": re,
+        "datetime": datetime,
+        "decimal": decimal,
+    }
     exec(tool["generated_code"], ns)  # noqa: S102
     func = ns[tool["function_name"]]
     return func(**flat)
