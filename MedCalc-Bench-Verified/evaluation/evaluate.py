@@ -12,6 +12,10 @@ def check_correctness(answer: str, ground_truth, calid, upper_limit, lower_limit
 
     calid = int(calid)
 
+    # Guard: treat missing/invalid answers as incorrect instead of crashing eval()
+    if answer is None or str(answer).strip() in ('', 'N/A', 'n/a', 'None', 'none'):
+        return 0
+
     if calid in [13, 68]:
         # Output Type: date
 
