@@ -40,6 +40,19 @@ def extract_input_schema(func: dict) -> Any:
     return None
 
 
+def extract_output_schema(func: dict) -> Any:
+    """提取函数的返回值信息，原样保留。
+
+    策略：
+    - 有结构化 returns 字段（tool-mdcalc）：直接存 list，格式 [{key, type, description}]
+    - 没有：返回 None
+    """
+    returns = func.get("returns")
+    if returns and isinstance(returns, list) and len(returns) > 0:
+        return returns
+    return None
+
+
 def has_chinese(text: str) -> bool:
     """检测文本中是否包含中文字符"""
     if not text:
@@ -145,6 +158,7 @@ async def import_json_service(tool_name: str, tool_info: dict, gateway_url: str 
             "gateway_interface": "call",
             "function_name": func["function_name"],
             "input_schema": extract_input_schema(func),
+            "output_schema": extract_output_schema(func),
             "category": category,
             "enabled": True
         }

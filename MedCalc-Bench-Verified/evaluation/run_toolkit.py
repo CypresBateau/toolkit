@@ -295,12 +295,14 @@ def search_tools(calculator_name: str, top_k: int = 3):
             raw_schema = item.get("input_schema")
             input_schema = _convert_schema(raw_schema)
 
+            output_schema = item.get("output_schema")
             tools.append({
                 "type": "function",
                 "function": {
                     "name": func_name,
                     "description": item.get("description", ""),
                     "parameters": input_schema,
+                    "returns": output_schema if output_schema and isinstance(output_schema, list) else [],
                 }
             })
             tool_id_map[func_name] = resource_id
