@@ -26,6 +26,7 @@ class ResourceMetadata(BaseModel):
 
     # 参数定义（仅 call 接口）
     input_schema: Optional[Any] = Field(None, description="输入参数 JSON Schema 或参数列表")
+    output_schema: Optional[Any] = Field(None, description="返回字段列表，格式 [{key, type, description}]")
 
     # 模型特定字段
     input_type: Optional[str] = Field(None, description="输入类型：image | text | json")
