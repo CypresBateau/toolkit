@@ -370,7 +370,7 @@ def run(model, prompt_style, limit=None):
 
     # 统计结果
     print(f"\n[OK] 推理完成，结果保存在 {output_path}")
-    stats = compute_overall_accuracy(output_filename, model_safe, f"{prompt_style}_vanilla")
+    stats = compute_overall_accuracy(output_path, model_safe, f"{prompt_style}_vanilla")
     print("\n[INFO] 准确率统计：")
     for cat, s in stats.items():
         print(f"  {cat}: {s['average']}% (std={s['std']})")
