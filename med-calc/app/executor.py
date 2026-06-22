@@ -24,6 +24,6 @@ def run_tool(tool: Dict[str, Any], arguments: Dict[str, Any]) -> Any:
             flat[k] = v
 
     local_ns: Dict[str, Any] = {}
-    exec(tool["code"], {}, local_ns)  # noqa: S102
+    exec(tool["generated_code"], {}, local_ns)  # noqa: S102
     func = local_ns[tool["function_name"]]
     return func(**flat)

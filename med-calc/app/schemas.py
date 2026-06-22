@@ -38,6 +38,8 @@ class ToolDetail(BaseModel):
     formula: Optional[str] = None
     docstring: Optional[str] = None
     next_steps: Optional[str] = None
+    parameters: Optional[Any] = None
+    returns: Optional[Any] = None
 
 
 class ToolListResponse(BaseModel):

@@ -16,7 +16,6 @@ services:
     depends_on:
       - mavl
       - mvfa-ad
-      - tool-scale
       - tool-unit
       - tool-mdcalc
       - tool-skills
@@ -77,21 +76,21 @@ services:
     restart: unless-stopped
 
 
-  # ── 医疗评分计算器（44 个，纯 CPU）──────────────────────────────────────────
-  tool-scale:
-    build: ./med-calc
-    image: med-calc:latest
-    container_name: tool-scale
-    expose:
-      - "8000"
-    environment:
-      - TOOL_JSON_PATH=/data/tool_scale.json
-      - TOOL_CATEGORY=scale
-    volumes:
-      - /data/wxb/toolkit/tool_scale.json:/data/tool_scale.json:ro
-    networks:
-      - toolnet
-    restart: unless-stopped
+  # ── 医疗评分计算器（44 个，纯 CPU，已废弃）──────────────────────────────────
+  # tool-scale:
+  #   build: ./med-calc
+  #   image: med-calc:latest
+  #   container_name: tool-scale
+  #   expose:
+  #     - "8000"
+  #   environment:
+  #     - TOOL_JSON_PATH=/data/tool_scale.json
+  #     - TOOL_CATEGORY=scale
+  #   volumes:
+  #     - /data/wxb/toolkit/tool_scale.json:/data/tool_scale.json:ro
+  #   networks:
+  #     - toolnet
+  #   restart: unless-stopped
 
   # ── 医学单位换算工具（237 个，纯 CPU）────────────────────────────────────────
   tool-unit:
@@ -101,10 +100,10 @@ services:
     expose:
       - "8000"
     environment:
-      - TOOL_JSON_PATH=/data/tool_unit.json
+      - TOOL_JSON_PATH=/data/tool_unit_metadata.json
       - TOOL_CATEGORY=unit
     volumes:
-      - /data/wxb/toolkit/tool_unit.json:/data/tool_unit.json:ro
+      - /data/wxb/toolkit/tool_unit_metadata.json:/data/tool_unit_metadata.json:ro
     networks:
       - toolnet
     restart: unless-stopped

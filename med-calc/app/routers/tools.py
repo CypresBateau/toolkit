@@ -20,8 +20,8 @@ async def list_tools():
         tools=[
             ToolSummary(
                 function_name=fn,
-                tool_name=t.get("tool_name", fn),
-                description=t.get("description"),
+                tool_name=t.get("tool_name") or t.get("name", fn),
+                description=t.get("description") or t.get("short_description"),
             )
             for fn, t in registry.all().items()
         ],
@@ -36,9 +36,11 @@ async def get_tool(function_name: str):
         raise HTTPException(404, f"Tool '{function_name}' not found.")
     return ToolDetail(
         function_name=function_name,
-        tool_name=tool.get("tool_name", function_name),
-        description=tool.get("description"),
+        tool_name=tool.get("tool_name") or tool.get("name", function_name),
+        description=tool.get("description") or tool.get("short_description"),
         formula=tool.get("formula"),
         docstring=tool.get("docstring"),
         next_steps=tool.get("next_steps"),
+        parameters=tool.get("parameters"),
+        returns=tool.get("returns"),
     )
