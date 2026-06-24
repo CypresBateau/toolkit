@@ -414,55 +414,69 @@ Respond ONLY in JSON format:
 def llm_verify_batch(
     candidates: List[Dict[str, Any]],
     api_key: str,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "deepseek/deepseek-r1",
     confidence_threshold: float = 0.7,
+    openrouter: bool = False,
 ) -> List[Dict[str, Any]]:
-    """第三层：批量 LLM 验证。"""
-    try:
-        import anthropic
-    except ImportError:
-        print("[WARN] anthropic SDK not installed, skipping LLM verification")
-        # 没有 LLM 时，直接返回所有候选（降级模式）
-        for cand in candidates:
-            cand["llm_confidence"] = None
-            cand["llm_reason"] = "LLM verification skipped"
-        return candidates
+    """第三层：批量 LLM 验证（支持 Anthropic 和 OpenRouter）。"""
+    if openrouter:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            print("[ERR] openai SDK not installed: pip install openai")
+            for cand in candidates:
+                cand["llm_confidence"] = None
+                cand["llm_reason"] = "no openai SDK"
+            return candidates
+        client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+        def call_llm(prompt):
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=200,
+            )
+            return resp.choices[0].message.content.strip()
+    else:
+        try:
+            import anthropic
+        except ImportError:
+            print("[ERR] anthropic SDK not installed")
+            for cand in candidates:
+                cand["llm_confidence"] = None
+                cand["llm_reason"] = "no anthropic SDK"
+            return candidates
+        client = anthropic.Anthropic(api_key=api_key)
+        def call_llm(prompt):
+            resp = client.messages.create(
+                model=model, max_tokens=200, temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return resp.content[0].text.strip()
 
-    client = anthropic.Anthropic(api_key=api_key)
     verified = []
-
     for i, cand in enumerate(candidates):
         prompt = build_llm_prompt(cand)
         try:
-            response = client.messages.create(
-                model=model,
-                max_tokens=200,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = response.content[0].text.strip()
-            # 解析 JSON 响应
+            text = call_llm(prompt)
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             result = json.loads(text)
             cand["llm_valid"] = result.get("valid", False)
             cand["llm_confidence"] = result.get("confidence", 0.0)
             cand["llm_reason"] = result.get("reason", "")
-
             if result.get("valid") and result.get("confidence", 0) >= confidence_threshold:
                 verified.append(cand)
-
         except Exception as e:
-            print(f"  [WARN] LLM call failed for candidate {i}: {e}")
-            # 失败的保留（保守策略）
             cand["llm_valid"] = None
             cand["llm_confidence"] = None
-            cand["llm_reason"] = f"API error: {e}"
+            cand["llm_reason"] = f"error: {str(e)[:100]}"
             verified.append(cand)
 
         if (i + 1) % 10 == 0:
             print(f"  [Layer 3] Verified {i+1}/{len(candidates)}")
 
-    print(f"[Layer 3] LLM verify: {len(verified)} edges confirmed "
-          f"(rejected {len(candidates) - len(verified)})")
+    print(f"[Layer 3] LLM verify: {len(verified)} confirmed (rejected {len(candidates) - len(verified)})")
     return verified
 
 
@@ -547,9 +561,9 @@ def build_tdg_json(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def main():
     parser = argparse.ArgumentParser(description="Build Tool Dependency Graph (TDG)")
-    parser.add_argument("--converter-json", required=True,
+    parser.add_argument("--converter-json", default=None,
                         help="Path to tool_unit_metadata.json")
-    parser.add_argument("--calculator-json", required=True,
+    parser.add_argument("--calculator-json", default=None,
                         help="Path to tools_metadata.json")
     parser.add_argument("--output", default="data/registry/tool_dependency_graph.json",
                         help="Output TDG JSON path")
@@ -559,12 +573,15 @@ def main():
                         help="Minimum cosine similarity for recall (layer 1)")
     parser.add_argument("--top-k", type=int, default=15,
                         help="Top-k candidates per converter (layer 1)")
+    parser.add_argument("--from-json", default=None,
+                        help="Skip Layers 0-2, load existing TDG JSON and only run LLM verification")
     parser.add_argument("--skip-llm", action="store_true",
                         help="Skip layer 3 LLM verification")
     parser.add_argument("--api-key", default=None,
                         help="Anthropic API key for LLM verification")
-    parser.add_argument("--llm-model", default="claude-sonnet-4-20250514",
-                        help="LLM model for verification")
+    parser.add_argument("--openrouter", action="store_true",
+                        help="Use OpenRouter API instead of Anthropic")
+    parser.add_argument("--llm-model", default="deepseek/deepseek-r1")
     parser.add_argument("--confidence-threshold", type=float, default=0.7,
                         help="Minimum LLM confidence to accept edge")
     args = parser.parse_args()
@@ -573,54 +590,94 @@ def main():
     print("Tool Dependency Graph (TDG) Builder")
     print("=" * 60)
 
-    # ── 第 0 层：参数抽取 ─────────────────────────────────────────────────
-    print("\n[Layer 0] Extracting parameters...")
-    converter_params = extract_converter_params(args.converter_json)
-    calculator_params = extract_calculator_params(args.calculator_json)
-    print(f"  Converters: {len(converter_params)} output params")
-    print(f"  Calculators: {len(calculator_params)} input params (numeric only)")
+    # ── --from-json 快速模式：跳过 0-2 层，直接从已有 JSON 做 LLM 验证 ──────
+    if args.from_json:
+        print(f"\n[Mode] Loading existing TDG from: {args.from_json}")
+        with open(args.from_json, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+        existing_edges = existing["edges"]
+        print(f"  Loaded {len(existing_edges)} edges")
 
-    # ── 第 1 层：编码器召回 ───────────────────────────────────────────────
-    print("\n[Layer 1] Semantic recall with embedding model...")
-    if args.embedding_model:
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer(args.embedding_model)
-    else:
-        # 尝试加载默认路径
-        try:
-            from sentence_transformers import SentenceTransformer
-            default_paths = [
-                "/data/wxb/models/bge-m3",
-                "/app/models/bge-m3",
-                "BAAI/bge-m3",
-            ]
-            model = None
-            for p in default_paths:
-                try:
-                    model = SentenceTransformer(p)
-                    print(f"  Loaded model from: {p}")
-                    break
-                except Exception:
-                    continue
-            if model is None:
-                raise RuntimeError("Cannot load embedding model")
-        except ImportError:
-            print("  [ERR] sentence-transformers not installed!")
+        # 需要元数据文件来重建完整的 candidate 格式（为 LLM prompt 提供描述）
+        if not args.converter_json or not args.calculator_json:
+            print("[ERR] --from-json requires --converter-json and --calculator-json for LLM prompt context")
             sys.exit(1)
 
-    converter_embeddings = encode_params(converter_params, model)
-    calculator_embeddings = encode_params(calculator_params, model)
+        conv_params = extract_converter_params(args.converter_json)
+        calc_params = extract_calculator_params(args.calculator_json)
+        # 建立索引
+        conv_map = {p["tool_id"]: p for p in conv_params}
+        calc_map = {}
+        for p in calc_params:
+            key = (p["tool_id"], p["param_name"])
+            calc_map[key] = p
 
-    candidates = semantic_recall(
-        converter_params, calculator_params,
-        converter_embeddings, calculator_embeddings,
-        top_k=args.top_k,
-        threshold=args.similarity_threshold,
-    )
+        # 重建 candidate 格式
+        filtered = []
+        for e in existing_edges:
+            conv = conv_map.get(e["src"])
+            calc = calc_map.get((e["dst"], e["dst_input_param"]))
+            if not conv or not calc:
+                continue
+            filtered.append({
+                "converter": conv,
+                "calculator_param": calc,
+                "similarity_score": e.get("similarity_score", 0.0),
+                "unit_info": {
+                    "type": "CONVERTIBLE",
+                    "target_unit": e.get("unit_to", ""),
+                    "alternative_units": e.get("unit_from", []),
+                },
+            })
+        print(f"  Reconstructed {len(filtered)} candidates for LLM verification")
+        # 跳到第三层
+    else:
+        # ── 第 0 层：参数抽取 ─────────────────────────────────────────────────
+        if not args.converter_json or not args.calculator_json:
+            print("[ERR] --converter-json and --calculator-json are required")
+            sys.exit(1)
+        print("\n[Layer 0] Extracting parameters...")
+        converter_params = extract_converter_params(args.converter_json)
+        calculator_params = extract_calculator_params(args.calculator_json)
+        print(f"  Converters: {len(converter_params)} output params")
+        print(f"  Calculators: {len(calculator_params)} input params (numeric only)")
 
-    # ── 第 2 层：单位兼容性过滤 ──────────────────────────────────────────
-    print("\n[Layer 2] Unit compatibility filtering...")
-    filtered = unit_compatibility_filter(candidates)
+        # ── 第 1 层：编码器召回 ───────────────────────────────────────────────
+        print("\n[Layer 1] Semantic recall with embedding model...")
+        if args.embedding_model:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer(args.embedding_model)
+        else:
+            try:
+                from sentence_transformers import SentenceTransformer
+                default_paths = ["/data/wxb/models/bge-m3", "/app/models/bge-m3", "BAAI/bge-m3"]
+                model = None
+                for p in default_paths:
+                    try:
+                        model = SentenceTransformer(p)
+                        print(f"  Loaded model from: {p}")
+                        break
+                    except Exception:
+                        continue
+                if model is None:
+                    raise RuntimeError("Cannot load embedding model")
+            except ImportError:
+                print("  [ERR] sentence-transformers not installed!")
+                sys.exit(1)
+
+        converter_embeddings = encode_params(converter_params, model)
+        calculator_embeddings = encode_params(calculator_params, model)
+
+        candidates = semantic_recall(
+            converter_params, calculator_params,
+            converter_embeddings, calculator_embeddings,
+            top_k=args.top_k,
+            threshold=args.similarity_threshold,
+        )
+
+        # ── 第 2 层：单位兼容性过滤 ──────────────────────────────────────────
+        print("\n[Layer 2] Unit compatibility filtering...")
+        filtered = unit_compatibility_filter(candidates)
 
     # ── 第 3 层：LLM 验证 ────────────────────────────────────────────────
     if args.skip_llm:
@@ -642,7 +699,8 @@ def main():
                 cand["llm_reason"] = "No API key"
         else:
             verified = llm_verify_batch(
-                filtered, api_key, args.llm_model, args.confidence_threshold
+                filtered, api_key, args.llm_model, args.confidence_threshold,
+                openrouter=args.openrouter,
             )
 
     # ── 输出 ─────────────────────────────────────────────────────────────
