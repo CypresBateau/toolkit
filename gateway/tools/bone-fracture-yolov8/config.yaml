@@ -1,0 +1,9 @@
+name: bone-fracture-yolov8
+type: remote
+endpoint: http://bone-fracture-yolov8:8000
+gpu_memory_mb: 1500
+load_time_s: 60
+predict_timeout_s: 60
+description: "骨骼X光骨折/病变检测 (YOLOv8, GRAZPEDWRI-DX 9类)，输出检测框+类别+置信度"
+input: image
+output: detection_boxes

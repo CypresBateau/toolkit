@@ -42,3 +42,10 @@ peritumoral-radiomics/
 MVFA-AD/CLIP/ckpt/
 MVFA-AD/ckpt/
 
+MToolHub/backend/data/indexes/unified_index.faiss
+MToolHub/backend/data/indexes/unified_metadata.pkl
+MToolHub/backend/data/registry/resources.json
+MedCalc-Bench-Verified/evaluation/outputs/z-ai_glm-4.6v_zero_shot_toolkit.jsonl
+MedCalc-Bench-Verified/evaluation/outputs/z-ai_glm-4.6v_zero_shot_vanilla.jsonl
+MedCalc-Bench-Verified/evaluation/results/results_z-ai_glm-4.6v_zero_shot_toolkit.json
+MedCalc-Bench-Verified/evaluation/results/results_z-ai_glm-4.6v_zero_shot_vanilla.json

@@ -1,0 +1,9 @@
+name: gbcnet
+type: remote
+endpoint: http://gbcnet:8000
+gpu_memory_mb: 1500
+load_time_s: 60
+predict_timeout_s: 60
+description: "超声胆囊癌三分类 (GBCNet)，输入腹部超声图，输出 Normal/Benign/Malignant 概率"
+input: image
+output: classification_probabilities

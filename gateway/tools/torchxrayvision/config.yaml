@@ -1,0 +1,9 @@
+name: torchxrayvision
+type: remote
+endpoint: http://torchxrayvision:8000
+gpu_memory_mb: 1500
+load_time_s: 60
+predict_timeout_s: 60
+description: "胸片多标签分类 (TorchXRayVision DenseNet)，输出 18 种胸部病理概率"
+input: image
+output: disease_probabilities
