@@ -41,6 +41,9 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 MTOOLHUB_URL = os.environ.get("MTOOLHUB_URL", "http://localhost:8081")
 MTOOLHUB_SEARCH_TOP_K = int(os.environ.get("MTOOLHUB_SEARCH_TOP_K", "3"))
+TDG_PATH = os.environ.get("TDG_PATH", None)
+
+_tdg_cache = None
 
 DATA_PATH = "../datasets/test_data.csv"
 ONE_SHOT_PATH = "one_shot_finalized_explanation.json"
@@ -88,8 +91,12 @@ def zero_shot_with_tools(note, question):
         '"answer": str(short_and_direct_answer_of_the_question)}.\n'
         '\n'
         'IMPORTANT RULES:\n'
+        '- ALL calculator tools expect SI units (e.g., height in cm, weight in kg, '
+        'creatinine in umol/L, bilirubin in umol/L, glucose in mmol/L, temperature in Celsius). '
+        'If the patient note uses US customary units (e.g., height in inches or feet, weight in lbs, '
+        'lab values in mg/dL or mg/L), you MUST convert to SI units first using the available '
+        'unit conversion tools before calling any calculator tool.\n'
         '- Never calculate manually. Always use the tools.\n'
-        '- Never pass a value in the wrong unit. Always convert first if units differ.\n'
         '- You may call multiple tools in sequence (e.g., unit conversion first, then calculator).\n'
         '- If you call a tool and it returns a result, you MUST use that tool result as your final answer. '
         'Do NOT recalculate or modify the tool result.\n'
@@ -372,8 +379,291 @@ def execute_tool(resource_id: str, arguments: dict):
 
 
 # ======================
-# LLM 调用（支持 function calling 多轮）
+# TDG 工具依赖图支持
 # ======================
+
+def load_tdg():
+    """加载 TDG JSON 文件（单例缓存）。"""
+    global _tdg_cache
+    if _tdg_cache is not None:
+        return _tdg_cache
+    path = TDG_PATH
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        _tdg_cache = json.load(f)
+    print(f"[TDG] Loaded {_tdg_cache['statistics']['total_edges']} edges from {path}")
+    return _tdg_cache
+
+
+def fetch_tool_schema(resource_id: str):
+    """通过精确 resource_id 从 MToolHub 获取单个工具的元数据。"""
+    func_name = resource_id.split(":")[-1] if ":" in resource_id else resource_id
+    try:
+        resp = httpx.post(
+            f"{MTOOLHUB_URL}/api/tools/search",
+            json={"query": func_name, "top_k": 5},
+            timeout=10.0
+        )
+        resp.raise_for_status()
+        for res in resp.json().get("results", []):
+            item = res.get("item", res)
+            if item.get("id") == resource_id:
+                return item
+        return None
+    except Exception:
+        return None
+
+
+def resource_to_tool(item: dict):
+    """将 resource 元数据转为 OpenAI function calling 格式，返回 (tool_dict, func_name)。"""
+    resource_id = item.get("id", "")
+    func_name = resource_id.replace(":", "_").replace("-", "_")
+    input_schema = _convert_schema(item.get("input_schema"))
+    output_schema = item.get("output_schema")
+    tool = {
+        "type": "function",
+        "function": {
+            "name": func_name,
+            "description": item.get("description", ""),
+            "parameters": input_schema,
+            "returns": output_schema if output_schema and isinstance(output_schema, list) else [],
+        }
+    }
+    return tool, func_name
+
+
+def search_tools_with_tdg(calculator_name: str, top_k: int = 3):
+    """搜索工具，并通过 TDG 自动附加 prerequisite converter 工具。"""
+    tools, tool_id_map = search_tools(calculator_name, top_k)
+    tdg = load_tdg()
+    if not tdg:
+        return tools, tool_id_map
+
+    added_ids = set(tool_id_map.values())
+    for tool in list(tools):
+        resource_id = tool_id_map.get(tool["function"]["name"])
+        if not resource_id:
+            continue
+        adj = tdg["adjacency"].get(resource_id, {})
+        for prereq_id in adj.get("prerequisites", []):
+            if prereq_id in added_ids:
+                continue
+            item = fetch_tool_schema(prereq_id)
+            if item:
+                conv_tool, func_name = resource_to_tool(item)
+                tools.append(conv_tool)
+                tool_id_map[func_name] = prereq_id
+                added_ids.add(prereq_id)
+                print(f"  [TDG] Added prerequisite: {prereq_id}")
+
+    return tools, tool_id_map
+
+
+def build_dependency_hint(tool_id_map: dict) -> str:
+    """根据 TDG 为当前工具集生成系统提示词中的依赖提示段落。"""
+    tdg = load_tdg()
+    if not tdg:
+        return ""
+    lines = []
+    for func_name, resource_id in tool_id_map.items():
+        adj = tdg["adjacency"].get(resource_id, {})
+        for param, info in adj.get("params", {}).items():
+            conv_id = info.get("converter", "")
+            target_unit = info.get("target_unit", "")
+            alt_units = info.get("alternative_units", [])
+            conv_func = conv_id.replace(":", "_").replace("-", "_")
+            if target_unit:
+                alt_str = "/".join(alt_units[:3]) if alt_units else "other units"
+                lines.append(
+                    f"- Parameter '{param}' requires {target_unit}. "
+                    f"If note uses {alt_str}, call {conv_func} first."
+                )
+    if not lines:
+        return ""
+    return "\nTOOL DEPENDENCIES (must check before calling calculator):\n" + "\n".join(lines) + "\n"
+
+
+def _make_openai_client():
+    return OpenAI(
+        base_url=OPENROUTER_BASE_URL,
+        api_key=OPENROUTER_API_KEY,
+        default_headers={
+            "HTTP-Referer": "https://github.com/MedCalc-Bench",
+            "X-Title": "MedCalc-Bench-Toolkit"
+        }
+    )
+
+
+def call_llm_plan_execute(model, patient_note, question, tools, tool_id_map, max_retries=3):
+    """
+    两阶段规划执行（C4 模式）。
+
+    Phase 1: LLM 一次性生成含参数值的执行计划（JSON DAG）。
+             静态参数直接从病历提取为具体值；
+             动态参数（来自上游工具输出）用 $step_N.field 引用。
+    Phase 2: 编排器按顺序执行每步，代码解析引用注入参数，LLM 不参与。
+    Phase 3: LLM 只看最终工具结果 + 原始问题，生成最终回答。
+
+    数据流走黑板（blackboard dict），不累积进 LLM 上下文。
+    """
+    if not tools:
+        return None, []
+
+    client = _make_openai_client()
+
+    # ---------- Phase 1: 规划 ----------
+    tool_schema_lines = []
+    for t in tools:
+        fn = t["function"]
+        rid = tool_id_map.get(fn["name"], fn["name"])
+        returns_str = ""
+        if fn.get("returns"):
+            returns_str = f"\n  Returns: {json.dumps(fn['returns'], ensure_ascii=False)}"
+        tool_schema_lines.append(
+            f"tool_id: {rid}\n"
+            f"  Description: {fn['description']}\n"
+            f"  Parameters: {json.dumps(fn['parameters'], ensure_ascii=False)}"
+            f"{returns_str}"
+        )
+
+    plan_system = (
+        "You are a medical calculation planner. "
+        "Given a patient note and task, output a JSON execution plan.\n\n"
+        "Rules:\n"
+        "1. Extract ALL parameter values directly from the patient note as concrete numbers/strings.\n"
+        "2. For parameters that depend on a previous step's output, use reference syntax: "
+        "\"$step_N.field_name\" (e.g., \"$step_1.converted_value\").\n"
+        "3. Only include steps that are actually needed.\n"
+        "4. Use exact tool_ids from the list below.\n\n"
+        "Available tools:\n" + "\n\n".join(tool_schema_lines) + "\n\n"
+        "Output ONLY valid JSON, no markdown, no explanation:\n"
+        "{\n"
+        "  \"steps\": [\n"
+        "    {\"step\": 1, \"tool_id\": \"tool-unit:...\", \"reason\": \"...\", "
+        "\"params\": {\"input_value\": 1.4, \"input_unit\": \"mg/dL\", \"target_unit\": \"umol/L\"}},\n"
+        "    {\"step\": 2, \"tool_id\": \"tool-mdcalc:...\", \"reason\": \"...\", "
+        "\"params\": {\"creatinine\": \"$step_1.converted_value\", \"age\": 67}}\n"
+        "  ]\n"
+        "}"
+    )
+    plan_user = f"Patient note:\n{patient_note}\n\nTask:\n{question}"
+
+    plan = None
+    for attempt in range(max_retries):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": plan_system},
+                    {"role": "user", "content": plan_user},
+                ],
+                temperature=0.0,
+                max_tokens=1024,
+            )
+            raw = resp.choices[0].message.content.strip()
+            # Strip markdown code fence if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            plan = json.loads(raw)
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"  [WARN] 规划阶段失败: {e}")
+                return None, []
+            time.sleep(2)
+
+    steps = plan.get("steps", [])
+    if not steps:
+        return None, []
+
+    print(f"  [PLAN] {len(steps)} steps: {[s.get('tool_id','?') for s in steps]}")
+
+    # ---------- Phase 2: 执行 ----------
+    blackboard = {}   # step_num -> tool result dict
+    tool_calls_log = []
+
+    for step in steps:
+        step_num = step.get("step", 0)
+        tool_id = step.get("tool_id", "")
+        raw_params = step.get("params", {})
+
+        # 解析参数：$step_N.field 引用替换为黑板中的值
+        params = {}
+        for k, v in raw_params.items():
+            if isinstance(v, str) and v.startswith("$step_"):
+                try:
+                    ref = v[1:]                   # "step_1.converted_value"
+                    ref_step_str, ref_field = ref.split(".", 1)
+                    ref_step_num = int(ref_step_str.replace("step_", ""))
+                    upstream = blackboard.get(ref_step_num, {})
+                    # result 可能嵌套在 result.result 里
+                    val = upstream.get(ref_field)
+                    if val is None and isinstance(upstream.get("result"), dict):
+                        val = upstream["result"].get(ref_field)
+                    params[k] = val
+                except Exception:
+                    params[k] = v
+            else:
+                params[k] = v
+
+        result = execute_tool(tool_id, params)
+        success = result.get("success", False)
+        tool_result = result.get("result")
+        error = result.get("error") or ""
+
+        if success:
+            val = tool_result.get("result") if isinstance(tool_result, dict) else tool_result
+            print(f"  [TOOL] step {step_num} {tool_id} -> OK | {val}")
+        else:
+            print(f"  [TOOL] step {step_num} {tool_id} -> FAIL | {error}")
+
+        # 存入黑板（支持两层：直接字段 + result 子字段）
+        board_entry = dict(tool_result) if isinstance(tool_result, dict) else {"value": tool_result}
+        if isinstance(tool_result, dict) and "result" in tool_result and isinstance(tool_result["result"], dict):
+            board_entry.update(tool_result["result"])
+        blackboard[step_num] = board_entry
+
+        tool_calls_log.append({
+            "resource_id": tool_id,
+            "arguments": params,
+            "result": tool_result,
+            "success": success,
+            "error": error or None,
+        })
+
+    # ---------- Phase 3: 最终回答 ----------
+    # 只给 LLM 看最后一步的结果 + 原始问题，不叠加中间历史
+    last_result = blackboard.get(len(steps), {})
+    final_system = (
+        'You are a helpful assistant. Given the tool result, answer the question.\n'
+        'Output ONLY a JSON dict: '
+        '{"step_by_step_thinking": "...", "answer": "..."}'
+    )
+    final_user = (
+        f"Question: {question}\n\n"
+        f"Tool result: {json.dumps(last_result, ensure_ascii=False)}"
+    )
+
+    for attempt in range(max_retries):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": final_system},
+                    {"role": "user", "content": final_user},
+                ],
+                temperature=0.0,
+                max_tokens=512,
+            )
+            return resp.choices[0].message.content or "", tool_calls_log
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"  [WARN] 最终回答阶段失败: {e}")
+                return None, tool_calls_log
+            time.sleep(2)
+
+    return None, tool_calls_log
 
 def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retries=3):
     """
@@ -473,14 +763,15 @@ def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retri
 # 主推理循环
 # ======================
 
-def run(model, prompt_style, limit=None, calids=None, output_dir=None):
+def run(model, prompt_style, limit=None, calids=None, output_dir=None, tdg_mode="none"):
     if not OPENROUTER_API_KEY:
         print("[ERR] 请设置环境变量 OPENROUTER_API_KEY")
         sys.exit(1)
 
-    # 输出文件名
+    # 输出文件名（tdg_mode 区分四种实验条件）
     model_safe = model.replace("/", "_")
-    output_filename = f"{model_safe}_{prompt_style}_toolkit.jsonl"
+    tdg_suffix = f"_tdg_{tdg_mode}" if tdg_mode != "none" else ""
+    output_filename = f"{model_safe}_{prompt_style}_toolkit{tdg_suffix}.jsonl"
     _out_dir = output_dir or "outputs"
     output_path = os.path.join(_out_dir, output_filename)
 
@@ -529,8 +820,12 @@ def run(model, prompt_style, limit=None, calids=None, output_dir=None):
         question = row["Question"]
         calculator_name = row["Calculator Name"]
 
-        # 搜索相关工具（用计算器名称精确搜索，比病例摘要效果好）
-        tools, tool_id_map = search_tools(calculator_name, top_k=MTOOLHUB_SEARCH_TOP_K)
+        # 搜索相关工具
+        # tdg_mode: "none"=C1, "tools"=C2, "prompt"=C3, "plan"=C4
+        if tdg_mode in ("tools", "prompt", "plan"):
+            tools, tool_id_map = search_tools_with_tdg(calculator_name, top_k=MTOOLHUB_SEARCH_TOP_K)
+        else:
+            tools, tool_id_map = search_tools(calculator_name, top_k=MTOOLHUB_SEARCH_TOP_K)
         if tools:
             print(f"[DEBUG] {calculator_name} -> 找到 {len(tools)} 个工具: "
                   f"{[t['function']['name'] for t in tools]}")
@@ -539,6 +834,11 @@ def run(model, prompt_style, limit=None, calids=None, output_dir=None):
         if prompt_style == "zero_shot":
             if tools:
                 system, user = zero_shot_with_tools(patient_note, question)
+                # C3/C4: 注入依赖提示
+                if tdg_mode in ("prompt", "plan") and tools:
+                    hint = build_dependency_hint(tool_id_map)
+                    if hint:
+                        system = system + hint
             else:
                 system, user = zero_shot(patient_note, question)
         elif prompt_style == "one_shot":
@@ -563,10 +863,17 @@ def run(model, prompt_style, limit=None, calids=None, output_dir=None):
             {"role": "user", "content": user}
         ]
 
-        # 调用 LLM（带工具）
-        raw_answer, tool_calls_log = call_llm_with_tools(
-            model, messages, tools=tools or None, tool_id_map=tool_id_map
-        )
+        # 调用 LLM
+        if tdg_mode == "plan" and tools:
+            # C4: 两阶段规划执行，数据流走黑板，不走 LLM 上下文
+            raw_answer, tool_calls_log = call_llm_plan_execute(
+                model, patient_note, question, tools, tool_id_map
+            )
+        else:
+            # C1/C2/C3: 原始 ReAct 风格 function calling
+            raw_answer, tool_calls_log = call_llm_with_tools(
+                model, messages, tools=tools or None, tool_id_map=tool_id_map
+            )
         if raw_answer is None:
             raw_answer = ""
 
@@ -672,11 +979,18 @@ if __name__ == "__main__":
                         help="只跑指定 Calculator ID，逗号分隔，如 --calids 11,23,46,60")
     parser.add_argument("--output", type=str, default=None,
                         help="输出目录，默认为 outputs/")
+    parser.add_argument("--tdg-mode", type=str, default="none",
+                        choices=["none", "tools", "prompt", "plan"],
+                        help="TDG 消融实验模式: none=C1, tools=C2, prompt=C3, plan=C4")
+    parser.add_argument("--tdg-path", type=str, default=None,
+                        help="TDG JSON 文件路径（默认读取 TDG_PATH 环境变量）")
     args = parser.parse_args()
 
     if args.mtoolhub_url:
         MTOOLHUB_URL = args.mtoolhub_url
     MTOOLHUB_SEARCH_TOP_K = args.top_k
+    if args.tdg_path:
+        globals()["TDG_PATH"] = args.tdg_path
 
     calids = [c.strip() for c in args.calids.split(",")] if args.calids else None
-    run(args.model, args.prompt, args.limit, calids, args.output)
+    run(args.model, args.prompt, args.limit, calids, args.output, tdg_mode=args.tdg_mode)

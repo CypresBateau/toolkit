@@ -22,6 +22,8 @@ import json
 import os
 import re
 import sys
+
+sys.stdout.reconfigure(encoding="utf-8")
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -435,6 +437,7 @@ def llm_verify_batch(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 max_tokens=200,
+                timeout=30,
             )
             return resp.choices[0].message.content.strip()
     else:
