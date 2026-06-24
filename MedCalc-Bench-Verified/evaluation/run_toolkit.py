@@ -617,6 +617,15 @@ def call_llm_plan_execute(model, patient_note, question, tools, tool_id_map, max
             print(f"  [TOOL] step {step_num} {tool_id} -> OK | {val}")
         else:
             print(f"  [TOOL] step {step_num} {tool_id} -> FAIL | {error}")
+            # 上游失败时记录后直接中止，不注入 null 到下游
+            tool_calls_log.append({
+                "resource_id": tool_id,
+                "arguments": params,
+                "result": tool_result,
+                "success": success,
+                "error": error or None,
+            })
+            return None, tool_calls_log
 
         # 存入黑板（支持两层：直接字段 + result 子字段）
         board_entry = dict(tool_result) if isinstance(tool_result, dict) else {"value": tool_result}
@@ -637,6 +646,7 @@ def call_llm_plan_execute(model, patient_note, question, tools, tool_id_map, max
     last_result = blackboard.get(len(steps), {})
     final_system = (
         'You are a helpful assistant. Given the tool result, answer the question.\n'
+        'The "answer" field must be a short numeric value or text extracted from the tool result.\n'
         'Output ONLY a JSON dict: '
         '{"step_by_step_thinking": "...", "answer": "..."}'
     )
@@ -654,7 +664,7 @@ def call_llm_plan_execute(model, patient_note, question, tools, tool_id_map, max
                     {"role": "user", "content": final_user},
                 ],
                 temperature=0.0,
-                max_tokens=512,
+                max_tokens=1024,
             )
             return resp.choices[0].message.content or "", tool_calls_log
         except Exception as e:
