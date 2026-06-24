@@ -690,7 +690,7 @@ def main():
         print(f"\n[Layer 3] LLM verification ({len(filtered)} candidates)...")
         api_key = args.api_key
         if not api_key:
-            api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
+            api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
         if not api_key:
             print("  [WARN] No API key provided, skipping LLM verification")
             verified = filtered
