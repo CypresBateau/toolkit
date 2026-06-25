@@ -765,13 +765,40 @@ def call_llm_with_tools(model, messages, tools=None, tool_id_map=None, max_retri
                 "content": json.dumps(tool_result or "", ensure_ascii=False)
             })
 
-    # 超过最大轮次，返回最后一条文本
-    return msg.content or "", tool_calls_log
+    # 超过最大轮次：追加一轮不带工具的调用，强制 LLM 给出文本答案
+    for attempt in range(max_retries):
+        try:
+            final_resp = client.chat.completions.create(
+                model=model,
+                messages=current_messages,
+                temperature=0.0,
+                max_tokens=4096,
+            )
+            return final_resp.choices[0].message.content or "", tool_calls_log
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return "", tool_calls_log
+            time.sleep(3)
 
 
 # ======================
 # 主推理循环
 # ======================
+
+def _dedup_jsonl(path):
+    """保留每个 (Calculator ID, Note ID) 的最新记录，就地覆写文件。"""
+    seen = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+                seen[(str(d["Calculator ID"]), str(d["Note ID"]))] = line
+            except Exception:
+                pass
+    with open(path, "w", encoding="utf-8") as f:
+        for line in seen.values():
+            f.write(line if line.endswith("\n") else line + "\n")
+
 
 def run(model, prompt_style, limit=None, calids=None, output_dir=None, tdg_mode="none"):
     if not OPENROUTER_API_KEY:
@@ -795,7 +822,8 @@ def run(model, prompt_style, limit=None, calids=None, output_dir=None, tdg_mode=
             for line in f:
                 try:
                     d = json.loads(line)
-                    existing_keys.add((str(d["Calculator ID"]), str(d["Note ID"])))
+                    if not calids or str(d["Calculator ID"]) not in {str(c) for c in calids}:
+                        existing_keys.add((str(d["Calculator ID"]), str(d["Note ID"])))
                 except Exception:
                     pass
         print(f"[INFO] 已有 {len(existing_keys)} 条结果，跳过")
@@ -817,6 +845,7 @@ def run(model, prompt_style, limit=None, calids=None, output_dir=None, tdg_mode=
         one_shot_json = json.load(f)
 
     # 推理循环
+    _done = _correct = 0
     for index in tqdm.tqdm(range(len(df))):
         row = df.iloc[index]
         calculator_id = str(row["Calculator ID"])
@@ -960,8 +989,17 @@ def run(model, prompt_style, limit=None, calids=None, output_dir=None, tdg_mode=
         with open(output_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(outputs, ensure_ascii=False) + "\n")
 
+        _done += 1
+        if status == "Correct":
+            _correct += 1
+        if _done % 50 == 0:
+            print(f"\n[PROGRESS] {_done} 条已完成 | 准确率: {_correct}/{_done} = {_correct/_done*100:.1f}%\n")
+
     # 统计结果
     print(f"\n[OK] 推理完成，结果保存在 {output_path}")
+    if calids:
+        _dedup_jsonl(output_path)
+        print(f"[INFO] 已去重，calid {calids} 旧条目已替换为最新结果")
     stats = compute_overall_accuracy(output_path, model_safe, f"{prompt_style}_toolkit")
     print("\n[INFO] 准确率统计：")
     for cat, s in stats.items():

@@ -23,6 +23,9 @@ def run_tool(tool: Dict[str, Any], arguments: Dict[str, Any]) -> Any:
         else:
             flat[k] = v
 
+    # 归一化 Unicode micro 符号：U+03BC (Greek mu) -> U+00B5 (micro sign)
+    flat = {k: v.replace('\u03bc', '\u00b5') if isinstance(v, str) else v for k, v in flat.items()}
+
     local_ns: Dict[str, Any] = {}
     exec(tool["generated_code"], {}, local_ns)  # noqa: S102
     func = local_ns[tool["function_name"]]
