@@ -153,7 +153,7 @@ async def import_json_service(tool_name: str, tool_info: dict, gateway_url: str 
             "name_zh": name_zh,
             "description": description,
             "description_zh": description_zh,
-            "keywords": [],  # 元数据中没有 keywords 字段，留空
+            "keywords": existing_keywords.get(f"{tool_name}:{func['function_name']}", []),
             "gateway_tool_name": tool_name,
             "gateway_interface": "call",
             "function_name": func["function_name"],
@@ -187,7 +187,7 @@ def create_model_resource(tool_name: str, tool_info: dict) -> Dict[str, Any]:
         "name_zh": name_zh,
         "description": description,
         "description_zh": description_zh,
-        "keywords": [],
+        "keywords": existing_keywords.get(tool_name, []),
         "gateway_tool_name": tool_name,
         "gateway_interface": "predict",
         "function_name": None,  # 模型没有 function_name
@@ -201,6 +201,22 @@ def create_model_resource(tool_name: str, tool_info: dict) -> Dict[str, Any]:
 async def import_from_gateway(gateway_url: str, output_dir: str):
     """主导入流程"""
     print(f"[INFO] 正在连接 Gateway: {gateway_url}")
+
+    # 加载已有 resources.json 的 keywords（避免重新 import 时丢失手动添加的 keywords）
+    output_path = Path(output_dir)
+    existing_keywords = {}
+    existing_file = output_path / "resources.json"
+    if existing_file.exists():
+        try:
+            with open(existing_file, encoding="utf-8") as f:
+                for res in json.load(f):
+                    kw = res.get("keywords", [])
+                    if kw:
+                        existing_keywords[res["id"]] = kw
+            if existing_keywords:
+                print(f"[INFO] 保留 {len(existing_keywords)} 个资源的已有 keywords")
+        except Exception:
+            pass
 
     # 1. 获取 Gateway 注册的所有服务
     tools_data = await fetch_gateway_tools(gateway_url)
